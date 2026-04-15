@@ -26,7 +26,7 @@ function cleanupRoom(broadcastId: string): void {
 }
 
 export function setupWebSocketServer(server: Server): void {
-  const wss = new WebSocketServer({ server, path: "/ws" });
+  const wss = new WebSocketServer({ server });
 
   wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     const url = req.url ?? "";
