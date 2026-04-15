@@ -37,6 +37,7 @@ export default function Studio() {
   const [waveform, setWaveform] = useState<Uint8Array>(new Uint8Array(0));
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const isLiveRef = useRef(false);
   
   // Mixer State
   const [bass, setBass] = useState(0);
@@ -132,18 +133,39 @@ export default function Studio() {
       const socket = new WebSocket(`${protocol}//${window.location.host}/ws/broadcast/${res.id}`);
       
       socket.onopen = async () => {
-        const audio = new BroadcasterAudio();
-        await audio.start(socket, setWaveform, isRecorded);
-        audio.updateSettings(bass, mid, treble, compressorOn);
-        setAudioObj(audio);
-        setWs(socket);
-        setStep(2);
-        toast({ title: "You are LIVE!", description: "You are now broadcasting." });
+        try {
+          const audio = new BroadcasterAudio();
+          await audio.start(socket, setWaveform, isRecorded);
+          audio.updateSettings(bass, mid, treble, compressorOn);
+          setAudioObj(audio);
+          setWs(socket);
+          isLiveRef.current = true;
+          setStep(2);
+          toast({ title: "You are LIVE!", description: "You are now broadcasting." });
+        } catch (err: any) {
+          socket.close();
+          let description = err.message || "Could not access your microphone.";
+          if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+            description = "Microphone access was denied. Please allow microphone permission in your browser and try again.";
+          } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+            description = "No microphone found. Please connect a microphone and try again.";
+          } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+            description = "Your microphone is already in use by another app. Please close it and try again.";
+          }
+          toast({ title: "Microphone Error", description, variant: "destructive" });
+        }
       };
 
       socket.onerror = (err) => {
         console.error("WebSocket error:", err);
-        toast({ title: "Connection Error", description: "Failed to connect to broadcast server.", variant: "destructive" });
+        toast({ title: "Connection Error", description: "Could not connect to the broadcast server. Please try again.", variant: "destructive" });
+      };
+
+      socket.onclose = (e) => {
+        if (e.code !== 1000 && isLiveRef.current) {
+          toast({ title: "Connection Lost", description: "Your broadcast connection dropped. Check your internet and try again.", variant: "destructive" });
+        }
+        isLiveRef.current = false;
       };
 
     } catch (err: any) {
