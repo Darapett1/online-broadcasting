@@ -47,79 +47,81 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-background">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+    <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-background relative overflow-hidden">
+      {/* Ambient Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="flex justify-center text-primary mb-6">
-          <div className="h-16 w-16 bg-primary/10 rounded-2xl flex items-center justify-center border border-primary/20">
+          <div className="h-16 w-16 bg-card rounded-2xl flex items-center justify-center border border-primary/20 shadow-[0_0_30px_rgba(234,179,8,0.15)]">
             <Radio className="h-8 w-8" />
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground font-sans">
-          Create Ministry Account
+        <h2 className="mt-4 text-center text-3xl font-black text-foreground font-sans tracking-widest uppercase">
+          THE LIGHTBEARER
         </h2>
-        <p className="mt-2 text-center text-sm text-muted-foreground">
-          Already have an account?{" "}
-          <Link href="/login" className="font-medium text-primary hover:text-primary/80">
-            Sign in
-          </Link>
+        <p className="mt-2 text-center text-base text-muted-foreground">
+          Register Ministry Account
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <Card className="bg-card border-border/50 shadow-2xl">
-          <CardContent className="pt-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Ministry/Broadcaster Name</Label>
-                <Input
-                  id="name"
-                  required
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="bg-background"
-                  placeholder="e.g. Grace Fellowship"
-                />
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-xl relative z-10">
+        <Card className="bg-card/80 backdrop-blur-xl border-border shadow-2xl rounded-2xl overflow-hidden">
+          <CardContent className="pt-8 px-8 pb-8">
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Ministry Name</Label>
+                  <Input
+                    id="name"
+                    required
+                    value={formData.name}
+                    onChange={handleChange}
+                    className="bg-background border-border focus-visible:ring-primary h-12 rounded-lg"
+                    placeholder="e.g. Grace Fellowship"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="username" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Handle</Label>
+                  <Input
+                    id="username"
+                    required
+                    value={formData.username}
+                    onChange={handleChange}
+                    className="bg-background border-border focus-visible:ring-primary h-12 rounded-lg"
+                    placeholder="grace_fellowship"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="username">Username Handle</Label>
-                <Input
-                  id="username"
-                  required
-                  value={formData.username}
-                  onChange={handleChange}
-                  className="bg-background"
-                  placeholder="e.g. grace_fellowship"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email address</Label>
+                <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Email address</Label>
                 <Input
                   id="email"
                   type="email"
                   required
                   value={formData.email}
                   onChange={handleChange}
-                  className="bg-background"
+                  className="bg-background border-border focus-visible:ring-primary h-12 rounded-lg"
                   placeholder="ministry@example.com"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number (Optional)</Label>
+                <Label htmlFor="phone" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Phone Number (Optional)</Label>
                 <Input
                   id="phone"
                   type="tel"
                   value={formData.phone}
                   onChange={handleChange}
-                  className="bg-background"
+                  className="bg-background border-border focus-visible:ring-primary h-12 rounded-lg"
                   placeholder="+1 (555) 000-0000"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Password</Label>
                 <Input
                   id="password"
                   type="password"
@@ -127,16 +129,24 @@ export default function Register() {
                   minLength={6}
                   value={formData.password}
                   onChange={handleChange}
-                  className="bg-background"
+                  className="bg-background border-border focus-visible:ring-primary h-12 rounded-lg"
                   placeholder="Minimum 6 characters"
                 />
               </div>
 
-              <Button type="submit" className="w-full h-12 text-lg font-bold mt-6" disabled={isLoading}>
-                {isLoading ? "Creating Account..." : "Create Account"}
+              <Button type="submit" className="w-full h-14 text-lg font-bold tracking-wide mt-8 shadow-lg hover:shadow-primary/25 transition-all" disabled={isLoading}>
+                {isLoading ? "CREATING STUDIO..." : "CREATE ACCOUNT"}
               </Button>
             </form>
           </CardContent>
+          <div className="px-8 py-6 bg-background/50 border-t border-border text-center">
+            <p className="text-sm text-muted-foreground">
+              Already broadcasting?{" "}
+              <Link href="/login" className="font-bold text-primary hover:text-primary/80 transition-colors">
+                Sign in
+              </Link>
+            </p>
+          </div>
         </Card>
       </div>
     </div>
