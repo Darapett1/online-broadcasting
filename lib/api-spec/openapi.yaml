@@ -1,22 +1,31 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Lightbearer Audio Broadcasting Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: broadcasters
+    description: Broadcaster accounts and profiles
+  - name: broadcasts
+    description: Live and past broadcasts
+  - name: recordings
+    description: Recorded broadcasts
+  - name: stats
+    description: Platform statistics
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +33,330 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a broadcaster account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterBody"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login as a broadcaster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current broadcaster session
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcasterProfile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /broadcasters:
+    get:
+      operationId: listBroadcasters
+      tags: [broadcasters]
+      summary: List all broadcaster profiles
+      responses:
+        "200":
+          description: List of broadcasters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BroadcasterProfile"
+
+  /broadcasters/{id}:
+    get:
+      operationId: getBroadcaster
+      tags: [broadcasters]
+      summary: Get broadcaster profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Broadcaster profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcasterProfile"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateBroadcaster
+      tags: [broadcasters]
+      summary: Update broadcaster profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBroadcasterBody"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcasterProfile"
+
+  /broadcasters/{id}/recordings:
+    get:
+      operationId: getBroadcasterRecordings
+      tags: [broadcasters]
+      summary: Get all public recordings for a broadcaster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of recordings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Recording"
+
+  /broadcasts:
+    get:
+      operationId: listBroadcasts
+      tags: [broadcasts]
+      summary: List all broadcasts (live + recent)
+      parameters:
+        - name: live
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of broadcasts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Broadcast"
+    post:
+      operationId: createBroadcast
+      tags: [broadcasts]
+      summary: Create a new broadcast session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBroadcastBody"
+      responses:
+        "201":
+          description: Created broadcast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Broadcast"
+
+  /broadcasts/{id}:
+    get:
+      operationId: getBroadcast
+      tags: [broadcasts]
+      summary: Get broadcast details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Broadcast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Broadcast"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateBroadcast
+      tags: [broadcasts]
+      summary: Update broadcast (end it, update listener count, etc.)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBroadcastBody"
+      responses:
+        "200":
+          description: Updated broadcast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Broadcast"
+
+  /broadcasts/search:
+    get:
+      operationId: searchBroadcasts
+      tags: [broadcasts]
+      summary: Search broadcasts by tag or keyword
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Broadcast"
+
+  /recordings:
+    post:
+      operationId: createRecording
+      tags: [recordings]
+      summary: Save a recording after broadcast ends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecordingBody"
+      responses:
+        "201":
+          description: Recording saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recording"
+
+  /recordings/{id}:
+    get:
+      operationId: getRecording
+      tags: [recordings]
+      summary: Get a recording
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recording
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recording"
+
+  /stats/platform:
+    get:
+      operationId: getPlatformStats
+      tags: [stats]
+      summary: Get platform-wide stats (live count, total listeners, etc.)
+      responses:
+        "200":
+          description: Platform stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformStats"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +364,251 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    RegisterBody:
+      type: object
+      properties:
+        name:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+        phone:
+          type: string
+      required: [name, username, email, password]
+
+    LoginBody:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+
+    AuthResponse:
+      type: object
+      properties:
+        broadcaster:
+          $ref: "#/components/schemas/BroadcasterProfile"
+        token:
+          type: string
+      required: [broadcaster]
+
+    BroadcasterProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        coverUrl:
+          type: string
+          nullable: true
+        followerCount:
+          type: integer
+        broadcastCount:
+          type: integer
+        isLive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, username, email, followerCount, broadcastCount, isLive, createdAt]
+
+    UpdateBroadcasterBody:
+      type: object
+      properties:
+        name:
+          type: string
+        bio:
+          type: string
+        phone:
+          type: string
+        avatarUrl:
+          type: string
+        coverUrl:
+          type: string
+
+    Broadcast:
+      type: object
+      properties:
+        id:
+          type: integer
+        broadcasterId:
+          type: integer
+        broadcaster:
+          $ref: "#/components/schemas/BroadcasterProfile"
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        thumbnailUrl:
+          type: string
+          nullable: true
+        venue:
+          type: string
+          nullable: true
+        minister:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        isLive:
+          type: boolean
+        listenerCount:
+          type: integer
+        recordingUrl:
+          type: string
+          nullable: true
+        isRecorded:
+          type: boolean
+        savedToDraft:
+          type: boolean
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, broadcasterId, title, tags, isLive, listenerCount, isRecorded, savedToDraft, startedAt]
+
+    CreateBroadcastBody:
+      type: object
+      properties:
+        broadcasterId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        thumbnailUrl:
+          type: string
+        venue:
+          type: string
+        minister:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+          minItems: 5
+          maxItems: 15
+        isRecorded:
+          type: boolean
+      required: [broadcasterId, title, tags]
+
+    UpdateBroadcastBody:
+      type: object
+      properties:
+        isLive:
+          type: boolean
+        listenerCount:
+          type: integer
+        endedAt:
+          type: string
+          format: date-time
+        recordingUrl:
+          type: string
+        savedToDraft:
+          type: boolean
+
+    Recording:
+      type: object
+      properties:
+        id:
+          type: integer
+        broadcastId:
+          type: integer
+          nullable: true
+        broadcasterId:
+          type: integer
+        title:
+          type: string
+        url:
+          type: string
+        thumbnailUrl:
+          type: string
+          nullable: true
+        durationSeconds:
+          type: integer
+          nullable: true
+        isPublic:
+          type: boolean
+        isDraft:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, broadcasterId, title, url, isPublic, isDraft, createdAt]
+
+    CreateRecordingBody:
+      type: object
+      properties:
+        broadcastId:
+          type: integer
+        broadcasterId:
+          type: integer
+        title:
+          type: string
+        url:
+          type: string
+        thumbnailUrl:
+          type: string
+        durationSeconds:
+          type: integer
+        isPublic:
+          type: boolean
+        isDraft:
+          type: boolean
+      required: [broadcasterId, title, url, isPublic, isDraft]
+
+    PlatformStats:
+      type: object
+      properties:
+        liveBroadcasts:
+          type: integer
+        totalListeners:
+          type: integer
+        totalBroadcasters:
+          type: integer
+        totalRecordings:
+          type: integer
+      required: [liveBroadcasts, totalListeners, totalBroadcasters, totalRecordings]

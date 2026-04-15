@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "The Lightbearer"
+version = "1.0.0"
+id = "artifacts/lightbearer"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22828
+
+[services.development]
+run = "pnpm --filter @workspace/lightbearer run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/lightbearer", "run", "build" ]
+publicDir = "artifacts/lightbearer/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22828"
+BASE_PATH = "/"
