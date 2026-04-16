@@ -87,15 +87,28 @@ export function setupWebSocketServer(server: Server): void {
 
       logger.info({ broadcastId, listeners: room.listeners.size }, "Listener connected");
 
+      // Notify broadcaster of updated listener count
+      if (room.broadcaster && room.broadcaster.readyState === WebSocket.OPEN) {
+        room.broadcaster.send(JSON.stringify({ type: "listener_count", count: room.listeners.size }));
+      }
+
       ws.on("close", () => {
         room.listeners.delete(ws);
         logger.info({ broadcastId, listeners: room.listeners.size }, "Listener disconnected");
+        // Notify broadcaster of updated listener count
+        if (room.broadcaster && room.broadcaster.readyState === WebSocket.OPEN) {
+          room.broadcaster.send(JSON.stringify({ type: "listener_count", count: room.listeners.size }));
+        }
         cleanupRoom(broadcastId);
       });
 
       ws.on("error", (err) => {
         logger.error({ err, broadcastId }, "Listener WebSocket error");
         room.listeners.delete(ws);
+        // Notify broadcaster of updated listener count
+        if (room.broadcaster && room.broadcaster.readyState === WebSocket.OPEN) {
+          room.broadcaster.send(JSON.stringify({ type: "listener_count", count: room.listeners.size }));
+        }
       });
 
       if (!room.broadcaster || room.broadcaster.readyState !== WebSocket.OPEN) {

@@ -137,6 +137,18 @@ export default function Studio() {
           const audio = new BroadcasterAudio();
           await audio.start(socket, setWaveform, isRecorded);
           audio.updateSettings(bass, mid, treble, compressorOn);
+          // Listen for control messages back from the server (listener count updates, etc.)
+          socket.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data as string);
+              if (msg.type === "listener_count") {
+                setListenerCount(msg.count);
+              }
+            } catch {
+              // Binary audio data may arrive here in edge cases — ignore
+            }
+          };
+
           setAudioObj(audio);
           setWs(socket);
           isLiveRef.current = true;
