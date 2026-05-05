@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useCreateBroadcast, useUpdateBroadcast, useCreateRecording } from "@workspace/api-client-react";
 import { BroadcasterAudio, MicTester } from "@/lib/audio";
-import { Mic, MicOff, Radio, Square, Settings2, Volume2, VolumeX, Video, X, Users, Activity } from "lucide-react";
+import { Mic, MicOff, Radio, Square, Settings2, Volume2, Upload, X, Users, Activity, ImageIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -30,6 +30,22 @@ function drawWaveformToCanvas(canvas: HTMLCanvasElement, data: Uint8Array) {
   }
 }
 
+/** Upload any Blob/File to our server and return the served URL */
+async function uploadFileToServer(file: Blob | File, contentType: string): Promise<string> {
+  const res = await fetch("/api/storage/uploads/blob", {
+    method: "POST",
+    headers: { "Content-Type": contentType },
+    body: file,
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as any).error || "Upload failed");
+  }
+  const { url } = await res.json();
+  return url as string;
+}
+
 export default function Studio() {
   const { broadcaster, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
@@ -42,11 +58,14 @@ export default function Studio() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [thumbnailUploading, setThumbnailUploading] = useState(false);
   const [venue, setVenue] = useState("");
   const [minister, setMinister] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [isRecorded, setIsRecorded] = useState(true);
+
+  const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
   // Mic test state (step 1)
   const micTesterRef = useRef<MicTester | null>(null);
@@ -70,6 +89,7 @@ export default function Studio() {
 
   // End Dialog
   const [showEndDialog, setShowEndDialog] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const createBroadcastMutation = useCreateBroadcast();
   const updateBroadcastMutation = useUpdateBroadcast();
@@ -81,28 +101,24 @@ export default function Studio() {
     }
   }, [broadcaster, authLoading, setLocation]);
 
-  // Wire EQ/compressor changes into live audio
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.updateSettings(bass, mid, treble, compressorOn);
     }
   }, [bass, mid, treble, compressorOn]);
 
-  // Wire mute into live audio
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.setMuted(isMuted);
     }
   }, [isMuted]);
 
-  // Wire volume into live audio
   useEffect(() => {
     if (audioRef.current && !isMuted) {
       audioRef.current.setVolume(volume);
     }
   }, [volume, isMuted]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       micTesterRef.current?.stop();
@@ -111,15 +127,11 @@ export default function Studio() {
   }, []);
 
   const drawToMicTestCanvas = useCallback((data: Uint8Array) => {
-    if (micTestCanvasRef.current) {
-      drawWaveformToCanvas(micTestCanvasRef.current, data);
-    }
+    if (micTestCanvasRef.current) drawWaveformToCanvas(micTestCanvasRef.current, data);
   }, []);
 
   const drawToLiveCanvas = useCallback((data: Uint8Array) => {
-    if (liveCanvasRef.current) {
-      drawWaveformToCanvas(liveCanvasRef.current, data);
-    }
+    if (liveCanvasRef.current) drawWaveformToCanvas(liveCanvasRef.current, data);
   }, []);
 
   const handleStartMicTest = async () => {
@@ -149,6 +161,22 @@ export default function Studio() {
     }
   };
 
+  const handleThumbnailPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setThumbnailUploading(true);
+    try {
+      const url = await uploadFileToServer(file, file.type || "image/jpeg");
+      setThumbnailUrl(url);
+      toast({ title: "Thumbnail uploaded" });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setThumbnailUploading(false);
+      if (thumbnailInputRef.current) thumbnailInputRef.current.value = "";
+    }
+  };
+
   const handleAddTag = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && tagInput.trim()) {
       e.preventDefault();
@@ -159,9 +187,7 @@ export default function Studio() {
     }
   };
 
-  const handleRemoveTag = (tag: string) => {
-    setTags(tags.filter((t) => t !== tag));
-  };
+  const handleRemoveTag = (tag: string) => setTags(tags.filter((t) => t !== tag));
 
   const handleGoLive = async () => {
     if (!broadcaster) return;
@@ -169,8 +195,6 @@ export default function Studio() {
       toast({ title: "Tags required", description: "Please add at least 5 tags.", variant: "destructive" });
       return;
     }
-
-    // Stop mic test if running
     handleStopMicTest();
 
     try {
@@ -194,9 +218,7 @@ export default function Studio() {
             try {
               const msg = JSON.parse(event.data as string);
               if (msg.type === "listener_count") setListenerCount(msg.count);
-            } catch {
-              // binary frames ignored
-            }
+            } catch { /* binary frames ignored */ }
           };
 
           audioRef.current = audio;
@@ -219,7 +241,7 @@ export default function Studio() {
       };
 
       socket.onerror = () => {
-        toast({ title: "Connection Error", description: "Could not connect to broadcast server. Please try again.", variant: "destructive" });
+        toast({ title: "Connection Error", description: "Could not connect to broadcast server.", variant: "destructive" });
       };
 
       socket.onclose = (e) => {
@@ -233,37 +255,25 @@ export default function Studio() {
     }
   };
 
-  const uploadRecordingBlob = async (blob: Blob): Promise<string> => {
-    // Step 1: Get presigned upload URL from our API
-    const metaRes = await fetch("/api/storage/uploads/request-url", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        name: `recording-${broadcastId}-${Date.now()}.webm`,
-        size: blob.size,
-        contentType: "audio/webm",
-      }),
-    });
-    if (!metaRes.ok) throw new Error("Failed to get upload URL");
-    const { uploadURL, objectPath } = await metaRes.json();
-
-    // Step 2: Upload directly to GCS via the presigned URL
-    const uploadRes = await fetch(uploadURL, {
-      method: "PUT",
-      headers: { "Content-Type": "audio/webm" },
-      body: blob,
-    });
-    if (!uploadRes.ok) throw new Error("Failed to upload recording to storage");
-
-    // Return the path we store in our database for serving
-    return `/api/storage${objectPath}`;
-  };
-
   const handleEndBroadcast = async (saveOption: "profile" | "draft" | "discard") => {
     if (!broadcastId || !broadcaster) return;
+    setIsSaving(true);
 
-    // Stop audio — this also finalises the MediaRecorder
+    // Grab recording blob BEFORE stopping (MediaRecorder needs to flush)
+    let recordingBlob: Blob | null = null;
+    if (saveOption !== "discard" && isRecorded) {
+      if (audioRef.current?.mediaRecorder && audioRef.current.mediaRecorder.state !== "inactive") {
+        // Stop the MediaRecorder and wait for it to flush its final chunk
+        await new Promise<void>((resolve) => {
+          const mr = audioRef.current!.mediaRecorder!;
+          mr.onstop = () => resolve();
+          mr.stop();
+        });
+      }
+      recordingBlob = audioRef.current?.getRecordingBlob() ?? null;
+    }
+
+    // Now stop the audio engine and close the WS
     audioRef.current?.stop();
     if (ws) ws.close();
     isLiveRef.current = false;
@@ -272,14 +282,9 @@ export default function Studio() {
     try {
       let recordingUrl: string | undefined;
 
-      if (saveOption !== "discard" && isRecorded) {
-        // Wait a tick for the MediaRecorder to flush its last chunk
-        await new Promise((r) => setTimeout(r, 300));
-        const blob = audioRef.current?.getRecordingBlob();
-        if (blob && blob.size > 0) {
-          toast({ title: "Uploading recording...", description: "Please wait while your broadcast is saved." });
-          recordingUrl = await uploadRecordingBlob(blob);
-        }
+      if (recordingBlob && recordingBlob.size > 0) {
+        toast({ title: "Uploading recording…", description: "Please wait while your broadcast is saved." });
+        recordingUrl = await uploadFileToServer(recordingBlob, "audio/webm");
       }
 
       if (recordingUrl) {
@@ -306,6 +311,8 @@ export default function Studio() {
       setLocation(`/broadcaster/${broadcaster.id}`);
     } catch (err: any) {
       toast({ title: "Error ending broadcast", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -322,7 +329,7 @@ export default function Studio() {
             <p className="text-muted-foreground mt-2">Configure your broadcast and test your mic before going live.</p>
           </div>
 
-          {/* Mic Test Section */}
+          {/* Mic Test */}
           <Card className="bg-card border-primary/20 overflow-hidden">
             <CardHeader className="border-b border-border/50 pb-4 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
@@ -366,9 +373,40 @@ export default function Studio() {
                   <Label>Venue</Label>
                   <Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="e.g. Main Sanctuary" />
                 </div>
+
+                {/* Thumbnail upload */}
                 <div className="space-y-2">
-                  <Label>Thumbnail URL (Optional)</Label>
-                  <Input value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} placeholder="https://..." />
+                  <Label>Thumbnail Image (Optional)</Label>
+                  <input
+                    ref={thumbnailInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleThumbnailPick}
+                  />
+                  {thumbnailUrl ? (
+                    <div className="relative w-full h-24 rounded-lg overflow-hidden border border-border group">
+                      <img src={thumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setThumbnailUrl("")}
+                        className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-3.5 h-3.5 text-white" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full h-24 border-dashed flex-col gap-2 text-muted-foreground hover:text-foreground"
+                      onClick={() => thumbnailInputRef.current?.click()}
+                      disabled={thumbnailUploading}
+                    >
+                      <ImageIcon className="w-6 h-6" />
+                      <span className="text-xs">{thumbnailUploading ? "Uploading…" : "Click to upload image"}</span>
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -401,7 +439,7 @@ export default function Studio() {
               <div className="flex items-center gap-3 pt-4 border-t border-border">
                 <Switch id="record" checked={isRecorded} onCheckedChange={setIsRecorded} />
                 <Label htmlFor="record" className="flex items-center gap-2 cursor-pointer">
-                  <Video className="w-4 h-4" /> Record this broadcast
+                  <Upload className="w-4 h-4" /> Record this broadcast
                 </Label>
               </div>
 
@@ -467,7 +505,6 @@ export default function Studio() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-5 space-y-6">
-
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <Label className="text-xs text-muted-foreground uppercase tracking-wider">Bass</Label>
@@ -527,25 +564,48 @@ export default function Studio() {
         </div>
       )}
 
+      {/* End Broadcast Dialog */}
       <Dialog open={showEndDialog} onOpenChange={setShowEndDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>End Broadcast</DialogTitle>
             <DialogDescription>
-              What would you like to do with the recording?
+              {isRecorded ? "What would you like to do with your recording?" : "Are you sure you want to end this broadcast?"}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3 py-4">
-            <Button onClick={() => handleEndBroadcast("profile")} className="w-full justify-start h-12" variant="default">
-              Save to Public Profile
-            </Button>
-            <Button onClick={() => handleEndBroadcast("draft")} className="w-full justify-start h-12" variant="secondary">
-              Save as Draft (Private)
-            </Button>
-            <Button onClick={() => handleEndBroadcast("discard")} className="w-full justify-start h-12 text-destructive hover:bg-destructive hover:text-white" variant="outline">
-              Discard Recording
+            {isRecorded && (
+              <>
+                <Button
+                  onClick={() => handleEndBroadcast("profile")}
+                  className="w-full justify-start h-12"
+                  variant="default"
+                  disabled={isSaving}
+                >
+                  Save to Public Profile
+                </Button>
+                <Button
+                  onClick={() => handleEndBroadcast("draft")}
+                  className="w-full justify-start h-12"
+                  variant="secondary"
+                  disabled={isSaving}
+                >
+                  Save as Draft (Private)
+                </Button>
+              </>
+            )}
+            <Button
+              onClick={() => handleEndBroadcast("discard")}
+              className="w-full justify-start h-12 text-destructive hover:bg-destructive hover:text-white"
+              variant="outline"
+              disabled={isSaving}
+            >
+              {isRecorded ? "Discard Recording & End" : "End Broadcast"}
             </Button>
           </div>
+          {isSaving && (
+            <p className="text-center text-sm text-muted-foreground pb-2">Uploading recording, please wait…</p>
+          )}
         </DialogContent>
       </Dialog>
     </div>

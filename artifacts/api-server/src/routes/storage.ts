@@ -1,4 +1,5 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter, type Request, type Response, json } from "express";
+import express from "express";
 import { Readable } from "stream";
 import {
   RequestUploadUrlBody,
@@ -9,6 +10,32 @@ import { ObjectPermission } from "../lib/objectAcl";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+/**
+ * POST /storage/uploads/blob
+ *
+ * Server-side upload: client sends raw binary body, server saves to GCS and
+ * returns the served path. Avoids all browser→GCS CORS issues.
+ */
+router.post(
+  "/storage/uploads/blob",
+  express.raw({ type: "*/*", limit: "250mb" }),
+  async (req: Request, res: Response) => {
+    const contentType = (req.headers["content-type"] || "application/octet-stream").split(";")[0].trim();
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      res.status(400).json({ error: "No file body received" });
+      return;
+    }
+    try {
+      const objectPath = await objectStorageService.uploadObject(req.body as Buffer, contentType);
+      const url = `/api/storage${objectPath}`;
+      res.json({ url, objectPath });
+    } catch (error) {
+      req.log.error({ err: error }, "Error uploading blob");
+      res.status(500).json({ error: "Upload failed" });
+    }
+  }
+);
 
 /**
  * POST /storage/uploads/request-url

@@ -189,6 +189,17 @@ export class ObjectStorageService {
     return normalizedPath;
   }
 
+  async uploadObject(buffer: Buffer, contentType: string): Promise<string> {
+    const objectId = randomUUID();
+    const safeExt = (contentType.split("/")[1] || "bin").split(";")[0].replace(/[^a-z0-9]/gi, "");
+    const privateDir = this.getPrivateObjectDir();
+    const fullPath = `${privateDir}/uploads/${objectId}.${safeExt}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const bucket = objectStorageClient.bucket(bucketName);
+    await bucket.file(objectName).save(buffer, { contentType });
+    return `/objects/uploads/${objectId}.${safeExt}`;
+  }
+
   async canAccessObjectEntity({
     userId,
     objectFile,
