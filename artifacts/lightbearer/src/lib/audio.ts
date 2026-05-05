@@ -1,3 +1,5 @@
+const WORKLET_URL = new URL("/audio-processor.js", window.location.origin).href;
+
 export class BroadcasterAudio {
   audioCtx: AudioContext | null = null;
   stream: MediaStream | null = null;
@@ -6,7 +8,7 @@ export class BroadcasterAudio {
   midFilter: BiquadFilterNode | null = null;
   trebleFilter: BiquadFilterNode | null = null;
   compressor: DynamicsCompressorNode | null = null;
-  scriptProcessor: ScriptProcessorNode | null = null;
+  workletNode: AudioWorkletNode | null = null;
   analyser: AnalyserNode | null = null;
   gainNode: GainNode | null = null;
   mediaRecorder: MediaRecorder | null = null;
@@ -42,57 +44,58 @@ export class BroadcasterAudio {
     this.compressor.attack.value = 0;
     this.compressor.release.value = 0.25;
 
-    // Gain node for mute/volume control
+    // Gain node for mute/volume — sits before the analyser
     this.gainNode = this.audioCtx.createGain();
     this.gainNode.gain.value = 1;
 
     this.analyser = this.audioCtx.createAnalyser();
     this.analyser.fftSize = 256;
 
-    this.scriptProcessor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+    // Load AudioWorklet — runs in audio thread, no echo, no stopping
+    await this.audioCtx.audioWorklet.addModule(WORKLET_URL);
+    this.workletNode = new AudioWorkletNode(this.audioCtx, "audio-processor");
 
-    // Chain: source -> bass -> mid -> treble -> compressor -> gainNode -> analyser -> scriptProcessor -> destination
+    // The worklet sends PCM chunks to the main thread which forwards over WS
+    this.workletNode.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(event.data);
+      }
+    };
+
+    // Silent sink — keeps the worklet node active without playing audio to speakers
+    const silentGain = this.audioCtx.createGain();
+    silentGain.gain.value = 0;
+
+    // Chain: source → bass → mid → treble → compressor → gainNode → analyser → worklet → silentGain → destination
     this.source.connect(this.bassFilter);
     this.bassFilter.connect(this.midFilter);
     this.midFilter.connect(this.trebleFilter);
     this.trebleFilter.connect(this.compressor);
     this.compressor.connect(this.gainNode);
     this.gainNode.connect(this.analyser);
-    this.analyser.connect(this.scriptProcessor);
-    this.scriptProcessor.connect(this.audioCtx.destination);
+    this.analyser.connect(this.workletNode);
+    this.workletNode.connect(silentGain);
+    silentGain.connect(this.audioCtx.destination);
 
+    // Waveform animation loop — draws fresh copy each frame
     const bufferLength = this.analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
-
     const draw = () => {
       if (!this.analyser) return;
       this.analyser.getByteFrequencyData(dataArray);
-      // Create a fresh copy each frame so callers see a new reference
       onWaveformUpdate(new Uint8Array(dataArray));
       this.animFrameId = requestAnimationFrame(draw);
     };
     draw();
 
-    this.scriptProcessor.onaudioprocess = (e) => {
-      const inputData = e.inputBuffer.getChannelData(0);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(inputData.buffer);
-      }
-      // Silence output to prevent echo back through speakers
-      const outputData = e.outputBuffer.getChannelData(0);
-      for (let i = 0; i < outputData.length; i++) {
-        outputData[i] = 0;
-      }
-    };
-
     if (record) {
       const dest = this.audioCtx.createMediaStreamDestination();
       this.compressor.connect(dest);
-      this.mediaRecorder = new MediaRecorder(dest.stream);
+      this.mediaRecorder = new MediaRecorder(dest.stream, { mimeType: "audio/webm;codecs=opus" });
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) this.recordedChunks.push(e.data);
       };
-      this.mediaRecorder.start();
+      this.mediaRecorder.start(1000); // collect chunks every second
     }
   }
 
@@ -120,10 +123,14 @@ export class BroadcasterAudio {
   }
 
   setVolume(volume: number) {
-    // volume is 0-100
     if (this.gainNode) {
       this.gainNode.gain.value = volume / 100;
     }
+  }
+
+  getRecordingBlob(): Blob | null {
+    if (!this.recordedChunks.length) return null;
+    return new Blob(this.recordedChunks, { type: "audio/webm;codecs=opus" });
   }
 
   stop() {
@@ -131,9 +138,9 @@ export class BroadcasterAudio {
     if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
       this.mediaRecorder.stop();
     }
-    if (this.scriptProcessor) {
-      this.scriptProcessor.disconnect();
-      this.scriptProcessor.onaudioprocess = null;
+    if (this.workletNode) {
+      this.workletNode.port.onmessage = null;
+      this.workletNode.disconnect();
     }
     if (this.source) this.source.disconnect();
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
@@ -156,11 +163,11 @@ export class MicTester {
     this.analyser = this.audioCtx.createAnalyser();
     this.analyser.fftSize = 256;
 
+    // Connect source → analyser only (no destination = no echo in mic test)
     source.connect(this.analyser);
 
     const bufferLength = this.analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
-
     const draw = () => {
       if (!this.analyser) return;
       this.analyser.getByteFrequencyData(dataArray);

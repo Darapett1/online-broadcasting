@@ -233,24 +233,64 @@ export default function Studio() {
     }
   };
 
+  const uploadRecordingBlob = async (blob: Blob): Promise<string> => {
+    // Step 1: Get presigned upload URL from our API
+    const metaRes = await fetch("/api/storage/uploads/request-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        name: `recording-${broadcastId}-${Date.now()}.webm`,
+        size: blob.size,
+        contentType: "audio/webm",
+      }),
+    });
+    if (!metaRes.ok) throw new Error("Failed to get upload URL");
+    const { uploadURL, objectPath } = await metaRes.json();
+
+    // Step 2: Upload directly to GCS via the presigned URL
+    const uploadRes = await fetch(uploadURL, {
+      method: "PUT",
+      headers: { "Content-Type": "audio/webm" },
+      body: blob,
+    });
+    if (!uploadRes.ok) throw new Error("Failed to upload recording to storage");
+
+    // Return the path we store in our database for serving
+    return `/api/storage${objectPath}`;
+  };
+
   const handleEndBroadcast = async (saveOption: "profile" | "draft" | "discard") => {
     if (!broadcastId || !broadcaster) return;
 
+    // Stop audio — this also finalises the MediaRecorder
     audioRef.current?.stop();
     if (ws) ws.close();
     isLiveRef.current = false;
+    setShowEndDialog(false);
 
     try {
-      if (saveOption !== "discard" && isRecorded && audioRef.current?.recordedChunks.length) {
-        const mockUrl = `https://example.com/recordings/${broadcastId}.webm`;
+      let recordingUrl: string | undefined;
+
+      if (saveOption !== "discard" && isRecorded) {
+        // Wait a tick for the MediaRecorder to flush its last chunk
+        await new Promise((r) => setTimeout(r, 300));
+        const blob = audioRef.current?.getRecordingBlob();
+        if (blob && blob.size > 0) {
+          toast({ title: "Uploading recording...", description: "Please wait while your broadcast is saved." });
+          recordingUrl = await uploadRecordingBlob(blob);
+        }
+      }
+
+      if (recordingUrl) {
         await createRecordingMutation.mutateAsync({
           data: {
             broadcasterId: broadcaster.id,
             broadcastId,
             title,
-            url: mockUrl,
+            url: recordingUrl,
             thumbnailUrl,
-            durationSeconds: 3600,
+            durationSeconds: 0,
             isPublic: saveOption === "profile",
             isDraft: saveOption === "draft",
           },
