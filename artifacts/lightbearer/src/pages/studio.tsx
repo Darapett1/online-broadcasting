@@ -9,10 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useCreateBroadcast, useUpdateBroadcast, useCreateRecording } from "@workspace/api-client-react";
 import { BroadcasterAudio, MicTester } from "@/lib/audio";
-import { Mic, MicOff, Radio, Square, Settings2, Volume2, Upload, X, Users, Activity, ImageIcon } from "lucide-react";
+import {
+  Mic, MicOff, Radio, Square, Settings2, Volume2, Upload,
+  X, Users, Activity, ImageIcon, Headphones, HeadphoneOff,
+  Wifi, Clock
+} from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 
 function drawWaveformToCanvas(canvas: HTMLCanvasElement, data: Uint8Array) {
@@ -30,7 +34,6 @@ function drawWaveformToCanvas(canvas: HTMLCanvasElement, data: Uint8Array) {
   }
 }
 
-/** Upload any Blob/File to our server and return the served URL */
 async function uploadFileToServer(file: Blob | File, contentType: string): Promise<string> {
   const res = await fetch("/api/storage/uploads/blob", {
     method: "POST",
@@ -46,6 +49,19 @@ async function uploadFileToServer(file: Blob | File, contentType: string): Promi
   return url as string;
 }
 
+function LiveClock() {
+  const [time, setTime] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="font-mono text-sm tabular-nums">
+      {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+    </span>
+  );
+}
+
 export default function Studio() {
   const { broadcaster, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
@@ -53,6 +69,8 @@ export default function Studio() {
 
   const [step, setStep] = useState<1 | 2>(1);
   const [broadcastId, setBroadcastId] = useState<number | null>(null);
+  const [liveStartTime, setLiveStartTime] = useState<Date | null>(null);
+  const [liveDuration, setLiveDuration] = useState("00:00");
 
   // Form State
   const [title, setTitle] = useState("");
@@ -64,30 +82,30 @@ export default function Studio() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [isRecorded, setIsRecorded] = useState(true);
-
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
-  // Mic test state (step 1)
+  // Mic test
   const micTesterRef = useRef<MicTester | null>(null);
   const micTestCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isTesting, setIsTesting] = useState(false);
 
-  // Live audio state (step 2)
+  // Live audio
   const audioRef = useRef<BroadcasterAudio | null>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const isLiveRef = useRef(false);
 
-  // Mixer State
+  // Mixer
   const [bass, setBass] = useState(0);
   const [mid, setMid] = useState(0);
   const [treble, setTreble] = useState(0);
   const [compressorOn, setCompressorOn] = useState(true);
   const [volume, setVolume] = useState(100);
   const [isMuted, setIsMuted] = useState(false);
+  const [isMonitoring, setIsMonitoring] = useState(false);
   const [listenerCount, setListenerCount] = useState(0);
 
-  // End Dialog
+  // End dialog
   const [showEndDialog, setShowEndDialog] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -96,28 +114,37 @@ export default function Studio() {
   const createRecordingMutation = useCreateRecording();
 
   useEffect(() => {
-    if (!authLoading && !broadcaster) {
-      setLocation("/login");
-    }
+    if (!authLoading && !broadcaster) setLocation("/login");
   }, [broadcaster, authLoading, setLocation]);
 
+  // Live duration timer
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.updateSettings(bass, mid, treble, compressorOn);
-    }
+    if (!liveStartTime) return;
+    const id = setInterval(() => {
+      const secs = Math.floor((Date.now() - liveStartTime.getTime()) / 1000);
+      const m = String(Math.floor(secs / 60)).padStart(2, "0");
+      const s = String(secs % 60).padStart(2, "0");
+      setLiveDuration(`${m}:${s}`);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [liveStartTime]);
+
+  // Sync EQ/compressor live (no graph disconnection)
+  useEffect(() => {
+    audioRef.current?.updateSettings(bass, mid, treble, compressorOn);
   }, [bass, mid, treble, compressorOn]);
 
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.setMuted(isMuted);
-    }
+    audioRef.current?.setMuted(isMuted);
   }, [isMuted]);
 
   useEffect(() => {
-    if (audioRef.current && !isMuted) {
-      audioRef.current.setVolume(volume);
-    }
+    if (!isMuted) audioRef.current?.setVolume(volume);
   }, [volume, isMuted]);
+
+  useEffect(() => {
+    audioRef.current?.setMonitor(isMonitoring);
+  }, [isMonitoring]);
 
   useEffect(() => {
     return () => {
@@ -142,11 +169,10 @@ export default function Studio() {
       setIsTesting(true);
     } catch (err: any) {
       let description = err.message || "Could not access microphone.";
-      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")
         description = "Microphone access denied. Allow mic permission in your browser and try again.";
-      } else if (err.name === "NotFoundError") {
+      else if (err.name === "NotFoundError")
         description = "No microphone found. Please connect a microphone.";
-      }
       toast({ title: "Microphone Error", description, variant: "destructive" });
     }
   };
@@ -156,8 +182,7 @@ export default function Studio() {
     micTesterRef.current = null;
     setIsTesting(false);
     if (micTestCanvasRef.current) {
-      const ctx = micTestCanvasRef.current.getContext("2d");
-      ctx?.clearRect(0, 0, micTestCanvasRef.current.width, micTestCanvasRef.current.height);
+      micTestCanvasRef.current.getContext("2d")?.clearRect(0, 0, micTestCanvasRef.current.width, micTestCanvasRef.current.height);
     }
   };
 
@@ -187,8 +212,6 @@ export default function Studio() {
     }
   };
 
-  const handleRemoveTag = (tag: string) => setTags(tags.filter((t) => t !== tag));
-
   const handleGoLive = async () => {
     if (!broadcaster) return;
     if (tags.length < 5) {
@@ -201,7 +224,6 @@ export default function Studio() {
       const res = await createBroadcastMutation.mutateAsync({
         data: { broadcasterId: broadcaster.id, title, description, thumbnailUrl, venue, minister, tags, isRecorded },
       });
-
       setBroadcastId(res.id);
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -218,36 +240,34 @@ export default function Studio() {
             try {
               const msg = JSON.parse(event.data as string);
               if (msg.type === "listener_count") setListenerCount(msg.count);
-            } catch { /* binary frames ignored */ }
+            } catch { /* binary frames */ }
           };
 
           audioRef.current = audio;
           setWs(socket);
           isLiveRef.current = true;
+          setLiveStartTime(new Date());
           setStep(2);
-          toast({ title: "You are LIVE!", description: "Your broadcast has started." });
+          toast({ title: "🔴 You are LIVE!", description: "Your broadcast has started." });
         } catch (err: any) {
           socket.close();
           let description = err.message || "Could not access your microphone.";
-          if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-            description = "Microphone access was denied. Allow mic permission in your browser and try again.";
-          } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
-            description = "No microphone found. Please connect a microphone and try again.";
-          } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
-            description = "Your microphone is already in use by another app. Close it and try again.";
-          }
+          if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")
+            description = "Microphone access was denied. Please allow mic permission.";
+          else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError")
+            description = "No microphone found. Please connect a microphone.";
+          else if (err.name === "NotReadableError" || err.name === "TrackStartError")
+            description = "Microphone is already in use by another app.";
           toast({ title: "Microphone Error", description, variant: "destructive" });
         }
       };
 
-      socket.onerror = () => {
+      socket.onerror = () =>
         toast({ title: "Connection Error", description: "Could not connect to broadcast server.", variant: "destructive" });
-      };
 
       socket.onclose = (e) => {
-        if (e.code !== 1000 && isLiveRef.current) {
+        if (e.code !== 1000 && isLiveRef.current)
           toast({ title: "Connection Lost", description: "Your broadcast connection dropped.", variant: "destructive" });
-        }
         isLiveRef.current = false;
       };
     } catch (err: any) {
@@ -259,11 +279,9 @@ export default function Studio() {
     if (!broadcastId || !broadcaster) return;
     setIsSaving(true);
 
-    // Grab recording blob BEFORE stopping (MediaRecorder needs to flush)
     let recordingBlob: Blob | null = null;
     if (saveOption !== "discard" && isRecorded) {
       if (audioRef.current?.mediaRecorder && audioRef.current.mediaRecorder.state !== "inactive") {
-        // Stop the MediaRecorder and wait for it to flush its final chunk
         await new Promise<void>((resolve) => {
           const mr = audioRef.current!.mediaRecorder!;
           mr.onstop = () => resolve();
@@ -273,7 +291,6 @@ export default function Studio() {
       recordingBlob = audioRef.current?.getRecordingBlob() ?? null;
     }
 
-    // Now stop the audio engine and close the WS
     audioRef.current?.stop();
     if (ws) ws.close();
     isLiveRef.current = false;
@@ -307,7 +324,7 @@ export default function Studio() {
         data: { isLive: false, endedAt: new Date().toISOString(), savedToDraft: saveOption === "draft" },
       });
 
-      toast({ title: "Broadcast Ended", description: "Your broadcast has ended." });
+      toast({ title: "Broadcast Ended" });
       setLocation(`/broadcaster/${broadcaster.id}`);
     } catch (err: any) {
       toast({ title: "Error ending broadcast", description: err.message, variant: "destructive" });
@@ -317,13 +334,14 @@ export default function Studio() {
   };
 
   if (authLoading || !broadcaster) {
-    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading...</div>;
+    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading…</div>;
   }
 
   return (
-    <div className="container py-8 max-w-5xl">
+    <div className="min-h-screen bg-background">
+      {/* ── SETUP STEP ─────────────────────────────────────────────── */}
       {step === 1 && (
-        <div className="space-y-8">
+        <div className="container py-8 max-w-5xl space-y-8">
           <div>
             <h1 className="text-4xl font-bold tracking-tight">Broadcast Studio</h1>
             <p className="text-muted-foreground mt-2">Configure your broadcast and test your mic before going live.</p>
@@ -354,7 +372,7 @@ export default function Studio() {
             </CardContent>
           </Card>
 
-          {/* Broadcast Details Form */}
+          {/* Broadcast Details */}
           <Card className="bg-card border-border/50">
             <CardContent className="pt-6 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -373,36 +391,22 @@ export default function Studio() {
                   <Label>Venue</Label>
                   <Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="e.g. Main Sanctuary" />
                 </div>
-
-                {/* Thumbnail upload */}
                 <div className="space-y-2">
                   <Label>Thumbnail Image (Optional)</Label>
-                  <input
-                    ref={thumbnailInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleThumbnailPick}
-                  />
+                  <input ref={thumbnailInputRef} type="file" accept="image/*" className="hidden" onChange={handleThumbnailPick} />
                   {thumbnailUrl ? (
                     <div className="relative w-full h-24 rounded-lg overflow-hidden border border-border group">
                       <img src={thumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setThumbnailUrl("")}
-                        className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
+                      <button type="button" onClick={() => setThumbnailUrl("")}
+                        className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <X className="w-3.5 h-3.5 text-white" />
                       </button>
                     </div>
                   ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
+                    <Button type="button" variant="outline"
                       className="w-full h-24 border-dashed flex-col gap-2 text-muted-foreground hover:text-foreground"
                       onClick={() => thumbnailInputRef.current?.click()}
-                      disabled={thumbnailUploading}
-                    >
+                      disabled={thumbnailUploading}>
                       <ImageIcon className="w-6 h-6" />
                       <span className="text-xs">{thumbnailUploading ? "Uploading…" : "Click to upload image"}</span>
                     </Button>
@@ -417,17 +421,12 @@ export default function Studio() {
 
               <div className="space-y-2">
                 <Label>Tags (add 5–15) *</Label>
-                <Input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={handleAddTag}
-                  placeholder="Type a tag and press Enter"
-                />
+                <Input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleAddTag} placeholder="Type a tag and press Enter" />
                 <div className="flex flex-wrap gap-2 mt-2 min-h-[2rem]">
                   {tags.map((tag) => (
                     <span key={tag} className="bg-primary/20 text-primary border border-primary/30 px-2.5 py-1 rounded-full text-xs flex items-center gap-1">
                       {tag}
-                      <button type="button" onClick={() => handleRemoveTag(tag)} className="hover:text-primary/60 transition-colors">
+                      <button type="button" onClick={() => setTags(tags.filter((t) => t !== tag))} className="hover:text-primary/60">
                         <X className="w-3 h-3" />
                       </button>
                     </span>
@@ -449,122 +448,210 @@ export default function Studio() {
                 className="w-full h-14 text-lg font-bold bg-destructive text-white hover:bg-destructive/90 tracking-widest"
               >
                 <Radio className="w-5 h-5 mr-3 animate-pulse" />
-                {createBroadcastMutation.isPending ? "CONNECTING..." : "GO LIVE"}
+                {createBroadcastMutation.isPending ? "CONNECTING…" : "GO LIVE"}
               </Button>
             </CardContent>
           </Card>
         </div>
       )}
 
+      {/* ── LIVE STEP ──────────────────────────────────────────────── */}
       {step === 2 && (
-        <div className="space-y-6 animate-in fade-in duration-500">
-          {/* Live Status Bar */}
-          <div className="flex items-center justify-between bg-card p-5 rounded-xl border border-destructive/40 shadow-[0_0_40px_-10px_rgba(239,68,68,0.25)]">
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className="h-4 w-4 rounded-full bg-destructive animate-pulse" />
-                <div className="absolute inset-0 h-4 w-4 rounded-full bg-destructive animate-ping opacity-40" />
-              </div>
-              <div>
+        <div className="flex flex-col min-h-screen">
+
+          {/* ═══════════ STUDIO HEADER ═══════════ */}
+          <div className="relative bg-[#0a0a0f] border-b border-red-900/40 overflow-hidden">
+            {/* Ambient glow */}
+            <div className="absolute inset-0 bg-gradient-to-r from-red-950/30 via-transparent to-primary/5 pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-red-500/60 to-transparent" />
+
+            <div className="relative container py-5 flex flex-col gap-4">
+              {/* Top row — live pill + clock + end button */}
+              <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-xl font-bold">{title}</h2>
-                  <Badge variant="destructive" className="text-xs font-bold tracking-widest px-2">LIVE</Badge>
+                  {/* Animated LIVE pill */}
+                  <div className="flex items-center gap-2 bg-red-600/20 border border-red-600/50 rounded-full px-3 py-1.5 shadow-[0_0_20px_rgba(220,38,38,0.4)]">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                    </span>
+                    <span className="text-red-400 text-xs font-bold tracking-[0.2em]">ON AIR</span>
+                  </div>
+
+                  {/* Duration */}
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span className="font-mono text-sm tabular-nums text-foreground/70">{liveDuration}</span>
+                  </div>
+
+                  {/* Clock */}
+                  <div className="hidden sm:flex items-center gap-1.5 text-muted-foreground/60 text-sm">
+                    <LiveClock />
+                  </div>
                 </div>
-                <div className="flex gap-4 text-muted-foreground text-sm mt-0.5">
-                  <span className="flex items-center gap-1">
-                    <Users className="w-3.5 h-3.5" /> {listenerCount} {listenerCount === 1 ? "Listener" : "Listeners"}
-                  </span>
-                  {minister && <span>{minister}</span>}
-                  {venue && <span>• {venue}</span>}
+
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setShowEndDialog(true)}
+                  className="font-bold tracking-wider bg-red-600 hover:bg-red-700 shadow-[0_0_20px_rgba(220,38,38,0.35)] border border-red-500/50"
+                >
+                  <Square className="w-3.5 h-3.5 mr-1.5 fill-current" /> END BROADCAST
+                </Button>
+              </div>
+
+              {/* Main title row */}
+              <div className="flex items-end justify-between gap-4">
+                <div className="min-w-0">
+                  <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white leading-tight truncate">
+                    {title}
+                  </h1>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm">
+                    {minister && (
+                      <span className="flex items-center gap-1.5 text-primary font-medium">
+                        <Mic className="w-3.5 h-3.5" /> {minister}
+                      </span>
+                    )}
+                    {venue && (
+                      <span className="text-muted-foreground">{venue}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stats chips */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
+                    <Users className="w-3.5 h-3.5 text-primary" />
+                    <span className="text-sm font-bold text-white tabular-nums">{listenerCount}</span>
+                    <span className="text-xs text-muted-foreground hidden sm:inline">
+                      {listenerCount === 1 ? "listener" : "listeners"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
+                    <Wifi className="w-3.5 h-3.5 text-green-400 animate-pulse" />
+                    <span className="text-xs text-green-400 font-medium">Live</span>
+                  </div>
+                  {isRecorded && (
+                    <div className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                      <span className="text-xs text-red-400 font-medium">REC</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-            <Button variant="destructive" size="lg" onClick={() => setShowEndDialog(true)} className="font-bold tracking-wider">
-              <Square className="w-4 h-4 mr-2 fill-current" /> END BROADCAST
-            </Button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Waveform Visualizer */}
-            <Card className="lg:col-span-2 bg-card border-border/50 overflow-hidden">
-              <CardHeader className="border-b border-border/50 bg-background/30 py-3 px-5">
-                <CardTitle className="text-xs font-semibold uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
-                  <Activity className="w-4 h-4 text-primary" /> Live Audio Output
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 h-[360px] relative bg-black/60">
-                <canvas ref={liveCanvasRef} width={800} height={360} className="w-full h-full" />
-              </CardContent>
-            </Card>
+          {/* ═══════════ STUDIO BODY ═══════════ */}
+          <div className="container py-6 flex-1">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            {/* AI Mixer Panel */}
-            <Card className="bg-card border-border/50">
-              <CardHeader className="border-b border-border/50 bg-background/30 py-3 px-5">
-                <CardTitle className="text-xs font-semibold uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
-                  <Settings2 className="w-4 h-4 text-primary" /> AI Audio Mixer
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-5 space-y-6">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <Label className="text-xs text-muted-foreground uppercase tracking-wider">Bass</Label>
-                    <span className="text-xs text-primary font-mono">{bass > 0 ? `+${bass}` : bass} dB</span>
+              {/* Waveform */}
+              <Card className="lg:col-span-2 bg-card border-border/50 overflow-hidden">
+                <CardHeader className="border-b border-border/50 bg-background/30 py-3 px-5">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                    <Activity className="w-4 h-4 text-primary" /> Live Audio Output
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0 h-[320px] relative bg-black/70">
+                  <canvas ref={liveCanvasRef} width={800} height={320} className="w-full h-full" />
+                  {/* Scanline overlay */}
+                  <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(0,0,0,0.03)_2px,rgba(0,0,0,0.03)_4px)] pointer-events-none" />
+                </CardContent>
+              </Card>
+
+              {/* AI Mixer */}
+              <Card className="bg-card border-border/50">
+                <CardHeader className="border-b border-border/50 bg-background/30 py-3 px-5">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                    <Settings2 className="w-4 h-4 text-primary" /> AI Audio Mixer
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-5 space-y-5">
+
+                  {/* EQ */}
+                  {(["Bass", "Mid", "Treble"] as const).map((band) => {
+                    const val = band === "Bass" ? bass : band === "Mid" ? mid : treble;
+                    const set = band === "Bass" ? setBass : band === "Mid" ? setMid : setTreble;
+                    return (
+                      <div key={band} className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-xs text-muted-foreground uppercase tracking-wider">{band}</Label>
+                          <span className={`text-xs font-mono ${val !== 0 ? "text-primary" : "text-muted-foreground"}`}>
+                            {val > 0 ? `+${val}` : val} dB
+                          </span>
+                        </div>
+                        <Slider value={[val]} min={-15} max={15} step={1} onValueChange={(v) => set(v[0])} />
+                        {/* Tick marks */}
+                        <div className="flex justify-between px-0.5">
+                          <span className="text-[9px] text-muted-foreground/40">-15</span>
+                          <span className="text-[9px] text-muted-foreground/40">0</span>
+                          <span className="text-[9px] text-muted-foreground/40">+15</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Compressor */}
+                  <div className="pt-3 border-t border-border flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="comp" className="text-xs uppercase tracking-wider text-muted-foreground cursor-pointer">Compressor</Label>
+                      <p className="text-[10px] text-muted-foreground/50 mt-0.5">Evens out your audio levels</p>
+                    </div>
+                    <Switch id="comp" checked={compressorOn} onCheckedChange={setCompressorOn} />
                   </div>
-                  <Slider value={[bass]} min={-15} max={15} step={1} onValueChange={(v) => setBass(v[0])} />
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <Label className="text-xs text-muted-foreground uppercase tracking-wider">Mid</Label>
-                    <span className="text-xs text-primary font-mono">{mid > 0 ? `+${mid}` : mid} dB</span>
+                  {/* Volume + Mute */}
+                  <div className="pt-3 border-t border-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Volume2 className="w-3.5 h-3.5" /> Volume
+                      </Label>
+                      <span className="text-xs text-primary font-mono">{isMuted ? "Muted" : `${volume}%`}</span>
+                    </div>
+                    <Slider
+                      value={[volume]}
+                      min={0} max={100} step={1}
+                      onValueChange={(v) => { setVolume(v[0]); if (isMuted) setIsMuted(false); }}
+                      disabled={isMuted}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant={isMuted ? "destructive" : "outline"}
+                        size="sm"
+                        className="w-full text-xs"
+                        onClick={() => setIsMuted(!isMuted)}
+                      >
+                        {isMuted ? <><MicOff className="w-3.5 h-3.5 mr-1.5" />Unmute</> : <><Mic className="w-3.5 h-3.5 mr-1.5" />Mute</>}
+                      </Button>
+
+                      {/* Self-monitor toggle */}
+                      <Button
+                        variant={isMonitoring ? "default" : "outline"}
+                        size="sm"
+                        className={`w-full text-xs ${isMonitoring ? "bg-primary text-primary-foreground shadow-[0_0_12px_rgba(245,158,11,0.4)]" : ""}`}
+                        onClick={() => setIsMonitoring(!isMonitoring)}
+                        title="Hear yourself through your speakers"
+                      >
+                        {isMonitoring
+                          ? <><Headphones className="w-3.5 h-3.5 mr-1.5" />Monitoring</>
+                          : <><HeadphoneOff className="w-3.5 h-3.5 mr-1.5" />Monitor</>}
+                      </Button>
+                    </div>
+                    {isMonitoring && (
+                      <p className="text-[10px] text-amber-400/80 text-center leading-snug">
+                        You're hearing yourself — use headphones to avoid feedback echo.
+                      </p>
+                    )}
                   </div>
-                  <Slider value={[mid]} min={-15} max={15} step={1} onValueChange={(v) => setMid(v[0])} />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <Label className="text-xs text-muted-foreground uppercase tracking-wider">Treble</Label>
-                    <span className="text-xs text-primary font-mono">{treble > 0 ? `+${treble}` : treble} dB</span>
-                  </div>
-                  <Slider value={[treble]} min={-15} max={15} step={1} onValueChange={(v) => setTreble(v[0])} />
-                </div>
-
-                <div className="pt-3 border-t border-border flex items-center justify-between">
-                  <Label htmlFor="comp" className="text-xs uppercase tracking-wider text-muted-foreground cursor-pointer">Compressor</Label>
-                  <Switch id="comp" checked={compressorOn} onCheckedChange={setCompressorOn} />
-                </div>
-
-                <div className="pt-3 border-t border-border space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                      <Volume2 className="w-3.5 h-3.5" /> Volume
-                    </Label>
-                    <span className="text-xs text-primary font-mono">{isMuted ? "Muted" : `${volume}%`}</span>
-                  </div>
-                  <Slider
-                    value={[volume]}
-                    min={0}
-                    max={100}
-                    step={1}
-                    onValueChange={(v) => { setVolume(v[0]); if (isMuted) setIsMuted(false); }}
-                    disabled={isMuted}
-                  />
-                  <Button
-                    variant={isMuted ? "destructive" : "outline"}
-                    size="sm"
-                    className="w-full"
-                    onClick={() => setIsMuted(!isMuted)}
-                  >
-                    {isMuted ? <><MicOff className="w-4 h-4 mr-2" /> Unmute Mic</> : <><Mic className="w-4 h-4 mr-2" /> Mute Mic</>}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </div>
       )}
 
-      {/* End Broadcast Dialog */}
+      {/* ── END BROADCAST DIALOG ────────────────────────────────── */}
       <Dialog open={showEndDialog} onOpenChange={setShowEndDialog}>
         <DialogContent>
           <DialogHeader>
@@ -576,20 +663,10 @@ export default function Studio() {
           <div className="flex flex-col gap-3 py-4">
             {isRecorded && (
               <>
-                <Button
-                  onClick={() => handleEndBroadcast("profile")}
-                  className="w-full justify-start h-12"
-                  variant="default"
-                  disabled={isSaving}
-                >
+                <Button onClick={() => handleEndBroadcast("profile")} className="w-full justify-start h-12" disabled={isSaving}>
                   Save to Public Profile
                 </Button>
-                <Button
-                  onClick={() => handleEndBroadcast("draft")}
-                  className="w-full justify-start h-12"
-                  variant="secondary"
-                  disabled={isSaving}
-                >
+                <Button onClick={() => handleEndBroadcast("draft")} className="w-full justify-start h-12" variant="secondary" disabled={isSaving}>
                   Save as Draft (Private)
                 </Button>
               </>
@@ -600,12 +677,10 @@ export default function Studio() {
               variant="outline"
               disabled={isSaving}
             >
-              {isRecorded ? "Discard Recording & End" : "End Broadcast"}
+              {isRecorded ? "Discard & End" : "End Broadcast"}
             </Button>
           </div>
-          {isSaving && (
-            <p className="text-center text-sm text-muted-foreground pb-2">Uploading recording, please wait…</p>
-          )}
+          {isSaving && <p className="text-center text-sm text-muted-foreground pb-2">Uploading recording, please wait…</p>}
         </DialogContent>
       </Dialog>
     </div>
