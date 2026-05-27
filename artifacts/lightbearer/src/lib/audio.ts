@@ -286,8 +286,9 @@ export class ListenerAudio {
   audioCtx:  AudioContext | null = null;
   analyser:  AnalyserNode | null = null;
   gainNode:  GainNode | null     = null;
-  private nextTime    = 0;
-  private animFrameId = 0;
+  private nextTime      = 0;
+  private animFrameId   = 0;
+  private _audioElement: HTMLAudioElement | null = null;
 
   // Target jitter buffer: 40 ms ahead of now.
   // If the scheduled queue grows > MAX_AHEAD, we snap back to TARGET_AHEAD
@@ -355,12 +356,68 @@ export class ListenerAudio {
     this.nextTime += abuf.duration;
   }
 
+  /**
+   * Play a saved recording URL through the Web Audio API so the waveform
+   * visualiser works exactly like the live listener view.
+   */
+  startFromUrl(url: string, onWaveformUpdate: (data: Uint8Array) => void) {
+    this.audioCtx = new AudioContext({ sampleRate: 44100 });
+    this.analyser = this.audioCtx.createAnalyser();
+    this.gainNode = this.audioCtx.createGain();
+    this.analyser.fftSize = 512;
+
+    const audioEl = new Audio(url);
+    audioEl.crossOrigin = "anonymous";
+    audioEl.preload     = "auto";
+
+    const source = this.audioCtx.createMediaElementSource(audioEl);
+    source.connect(this.analyser);
+    this.analyser.connect(this.gainNode);
+    this.gainNode.connect(this.audioCtx.destination);
+
+    this._audioElement = audioEl;
+
+    const bufLen  = this.analyser.frequencyBinCount;
+    const dataArr = new Uint8Array(bufLen);
+    const draw = () => {
+      if (!this.analyser) return;
+      this.analyser.getByteFrequencyData(dataArr);
+      onWaveformUpdate(new Uint8Array(dataArr));
+      this.animFrameId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    // Returns a promise so callers can catch autoplay blocks
+    return audioEl.play();
+  }
+
+  /** Seek the recording to a given time (seconds). Only valid for URL playback. */
+  seekTo(seconds: number) {
+    if (this._audioElement) this._audioElement.currentTime = seconds;
+  }
+
+  /** Duration of the loaded recording in seconds (0 if live / not loaded). */
+  get duration(): number {
+    return this._audioElement?.duration ?? 0;
+  }
+
+  /** Current playback position in seconds. */
+  get currentTime(): number {
+    return this._audioElement?.currentTime ?? 0;
+  }
+
   setVolume(v: number) {
     if (this.gainNode) this.gainNode.gain.value = v;
+    if (this._audioElement) this._audioElement.volume = v;
   }
 
   stop() {
     cancelAnimationFrame(this.animFrameId);
+    if (this._audioElement) {
+      this._audioElement.pause();
+      this._audioElement.src = "";
+      this._audioElement = null;
+    }
     if (this.audioCtx) this.audioCtx.close();
     this.analyser = null;
   }

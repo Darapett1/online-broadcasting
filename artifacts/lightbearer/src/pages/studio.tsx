@@ -232,23 +232,60 @@ export default function Studio() {
   const endBroadcast = async (opt: "profile" | "draft" | "discard") => {
     if (!broadcastId || !broadcaster) return;
     setSaving(true);
-    let blob: Blob | null = null;
-    if (opt !== "discard" && isRecorded) {
-      if (audioRef.current?.mediaRecorder && audioRef.current.mediaRecorder.state !== "inactive") {
-        await new Promise<void>((res) => { const mr = audioRef.current!.mediaRecorder!; mr.onstop = () => res(); mr.stop(); });
-      }
-      blob = audioRef.current?.getRecordingBlob() ?? null;
+
+    // Always finalise the MediaRecorder so we get the last chunk
+    if (audioRef.current?.mediaRecorder && audioRef.current.mediaRecorder.state !== "inactive") {
+      await new Promise<void>((resolve) => {
+        const mr = audioRef.current!.mediaRecorder!;
+        mr.onstop = () => resolve();
+        mr.stop();
+      });
     }
-    audioRef.current?.stop(); if (ws) ws.close(); isLiveRef.current = false; setShowEnd(false);
+    const blob = audioRef.current?.getRecordingBlob() ?? null;
+
+    audioRef.current?.stop();
+    if (ws) ws.close();
+    isLiveRef.current = false;
+    setShowEnd(false);
+
     try {
+      // Always upload the audio so listeners can replay the broadcast later
       let url: string | undefined;
-      if (blob && blob.size > 0) { toast({ title: "Uploading recording…" }); url = await uploadFile(blob, "audio/webm"); }
-      if (url) await createRec.mutateAsync({ data: { broadcasterId: broadcaster.id, broadcastId, title, url, thumbnailUrl, durationSeconds: 0, isPublic: opt === "profile", isDraft: opt === "draft" } });
-      await updateBcast.mutateAsync({ id: broadcastId, data: { isLive: false, endedAt: new Date().toISOString(), savedToDraft: opt === "draft" } });
+      if (blob && blob.size > 0) {
+        toast({ title: "Saving broadcast audio…" });
+        url = await uploadFile(blob, "audio/webm");
+      }
+
+      // Only add to the recordings library if the broadcaster didn't discard
+      if (url && opt !== "discard") {
+        await createRec.mutateAsync({
+          data: {
+            broadcasterId: broadcaster.id, broadcastId, title, url,
+            thumbnailUrl, durationSeconds: 0,
+            isPublic: opt === "profile", isDraft: opt === "draft",
+          },
+        });
+      }
+
+      // Always mark the broadcast as ended and attach the recording URL so
+      // anyone who visits the page later can still listen to it
+      await updateBcast.mutateAsync({
+        id: broadcastId,
+        data: {
+          isLive: false,
+          endedAt: new Date().toISOString(),
+          recordingUrl: url,
+          savedToDraft: opt === "draft",
+        },
+      });
+
       toast({ title: "Broadcast ended" });
       setLocation(`/broadcaster/${broadcaster.id}`);
-    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
-    finally { setSaving(false); }
+    } catch (e: any) {
+      toast({ title: "Error ending broadcast", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (authLoading || !broadcaster) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading…</div>;

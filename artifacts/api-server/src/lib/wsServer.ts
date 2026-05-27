@@ -1,6 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "http";
 import type { Server } from "http";
+import { eq } from "drizzle-orm";
+import { db, broadcastsTable } from "@workspace/db";
 import { logger } from "./logger";
 
 interface BroadcastRoom {
@@ -25,13 +27,28 @@ function cleanupRoom(broadcastId: string): void {
   }
 }
 
+/** Mark a broadcast as ended in the database (isLive=false, endedAt=now). */
+async function markBroadcastEnded(broadcastId: string): Promise<void> {
+  try {
+    const numId = parseInt(broadcastId, 10);
+    if (isNaN(numId)) return;
+    await db
+      .update(broadcastsTable)
+      .set({ isLive: false, endedAt: new Date() })
+      .where(eq(broadcastsTable.id, numId));
+    logger.info({ broadcastId }, "Broadcast marked as ended");
+  } catch (err) {
+    logger.error({ err, broadcastId }, "Failed to mark broadcast as ended in DB");
+  }
+}
+
 export function setupWebSocketServer(server: Server): void {
   const wss = new WebSocketServer({ server });
 
   wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     const url = req.url ?? "";
     const broadcastMatch = url.match(/^\/ws\/broadcast\/(\d+)/);
-    const listenMatch = url.match(/^\/ws\/listen\/(\d+)/);
+    const listenMatch    = url.match(/^\/ws\/listen\/(\d+)/);
 
     if (broadcastMatch) {
       const broadcastId = broadcastMatch[1];
@@ -55,24 +72,29 @@ export function setupWebSocketServer(server: Server): void {
           buffer = Buffer.concat(data as Buffer[]);
         }
 
+        // Relay to all listeners
         room.listeners.forEach((listener) => {
           if (listener.readyState === WebSocket.OPEN) {
             listener.send(buffer, { binary: true }, (err) => {
-              if (err) {
-                logger.warn({ err, broadcastId }, "Error sending to listener");
-              }
+              if (err) logger.warn({ err, broadcastId }, "Error sending to listener");
             });
           }
         });
       });
 
-      ws.on("close", () => {
+      ws.on("close", async () => {
         room.broadcaster = null;
+
+        // ── Auto-clear the LIVE flag so past broadcasts don't stay "live" ──
+        await markBroadcastEnded(broadcastId);
+
+        // Notify all listeners the broadcast has ended
         room.listeners.forEach((listener) => {
           if (listener.readyState === WebSocket.OPEN) {
             listener.send(JSON.stringify({ type: "broadcast_ended" }));
           }
         });
+
         logger.info({ broadcastId, listeners: room.listeners.size }, "Broadcaster disconnected");
         cleanupRoom(broadcastId);
       });
@@ -80,6 +102,7 @@ export function setupWebSocketServer(server: Server): void {
       ws.on("error", (err) => {
         logger.error({ err, broadcastId }, "Broadcaster WebSocket error");
       });
+
     } else if (listenMatch) {
       const broadcastId = listenMatch[1];
       const room = getOrCreateRoom(broadcastId);
@@ -95,7 +118,6 @@ export function setupWebSocketServer(server: Server): void {
       ws.on("close", () => {
         room.listeners.delete(ws);
         logger.info({ broadcastId, listeners: room.listeners.size }, "Listener disconnected");
-        // Notify broadcaster of updated listener count
         if (room.broadcaster && room.broadcaster.readyState === WebSocket.OPEN) {
           room.broadcaster.send(JSON.stringify({ type: "listener_count", count: room.listeners.size }));
         }
@@ -105,7 +127,6 @@ export function setupWebSocketServer(server: Server): void {
       ws.on("error", (err) => {
         logger.error({ err, broadcastId }, "Listener WebSocket error");
         room.listeners.delete(ws);
-        // Notify broadcaster of updated listener count
         if (room.broadcaster && room.broadcaster.readyState === WebSocket.OPEN) {
           room.broadcaster.send(JSON.stringify({ type: "listener_count", count: room.listeners.size }));
         }
