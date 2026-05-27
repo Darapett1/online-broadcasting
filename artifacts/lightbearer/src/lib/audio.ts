@@ -284,10 +284,16 @@ export class MicTester {
 
 export class ListenerAudio {
   audioCtx:  AudioContext | null = null;
-  nextTime   = 0;
   analyser:  AnalyserNode | null = null;
   gainNode:  GainNode | null     = null;
+  private nextTime    = 0;
   private animFrameId = 0;
+
+  // Target jitter buffer: 40 ms ahead of now.
+  // If the scheduled queue grows > MAX_AHEAD, we snap back to TARGET_AHEAD
+  // (adaptive resync keeps latency tight even after burst delays).
+  private static readonly TARGET_AHEAD = 0.04;  // 40 ms
+  private static readonly MAX_AHEAD    = 0.25;  // 250 ms — beyond this, snap
 
   start(ws: WebSocket, onWaveformUpdate: (data: Uint8Array) => void) {
     this.audioCtx = new AudioContext({ sampleRate: 44100 });
@@ -316,15 +322,27 @@ export class ListenerAudio {
 
   private _playChunk(buf: ArrayBuffer) {
     if (!this.audioCtx || !this.gainNode) return;
+
     const f32  = new Float32Array(buf);
     const abuf = this.audioCtx.createBuffer(1, f32.length, 44100);
     abuf.copyToChannel(f32, 0);
-    const src  = this.audioCtx.createBufferSource();
+
+    const src = this.audioCtx.createBufferSource();
     src.buffer = abuf;
     src.connect(this.gainNode);
-    if (this.nextTime < this.audioCtx.currentTime) {
-      this.nextTime = this.audioCtx.currentTime + 0.05;
+    // Free resources after playback
+    src.onended = () => src.disconnect();
+
+    const now = this.audioCtx.currentTime;
+
+    // Adaptive jitter buffer:
+    //  • If nextTime has fallen behind now (late start / gap): anchor to TARGET_AHEAD
+    //  • If nextTime has drifted too far ahead (burst): snap back to TARGET_AHEAD
+    //  • Otherwise: schedule contiguously (no gap, no glitch)
+    if (this.nextTime < now || this.nextTime > now + ListenerAudio.MAX_AHEAD) {
+      this.nextTime = now + ListenerAudio.TARGET_AHEAD;
     }
+
     src.start(this.nextTime);
     this.nextTime += abuf.duration;
   }
