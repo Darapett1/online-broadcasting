@@ -50,11 +50,20 @@ router.get("/broadcasts/search", async (req, res): Promise<void> => {
 
   const { q } = params.data;
 
+  // Search title (case-insensitive ilike) OR minister OR venue OR any tag containing q
   const broadcasts = await db
     .select()
     .from(broadcastsTable)
     .where(
-      sql`(${ilike(broadcastsTable.title, `%${q}%`)} OR ${sql`${broadcastsTable.tags} @> ARRAY[${q}]::text[]`})`
+      sql`(
+        ${ilike(broadcastsTable.title, `%${q}%`)}
+        OR ${ilike(broadcastsTable.minister, `%${q}%`)}
+        OR ${ilike(broadcastsTable.venue, `%${q}%`)}
+        OR EXISTS (
+          SELECT 1 FROM unnest(${broadcastsTable.tags}) AS t
+          WHERE t ILIKE ${"%" + q + "%"}
+        )
+      )`
     )
     .orderBy(desc(broadcastsTable.startedAt));
 

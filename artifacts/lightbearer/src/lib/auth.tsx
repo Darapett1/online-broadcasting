@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useGetMe, useLogin, useLogout, useRegister } from "@workspace/api-client-react";
-import type { BroadcasterProfile, LoginBody, RegisterBody } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { BroadcasterProfile, LoginBody, RegisterBody } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetMeQueryKey } from "@workspace/api-client-react";
 
@@ -18,6 +18,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { data: me, isLoading, error } = useGetMe({
     query: {
+      queryKey: getGetMeQueryKey(),
       retry: false,
     }
   });

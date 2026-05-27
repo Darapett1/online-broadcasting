@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useGetBroadcast } from "@workspace/api-client-react";
+import { useGetBroadcast, getGetBroadcastQueryKey } from "@workspace/api-client-react";
 import { useParams, Link } from "wouter";
 import { ListenerAudio } from "@/lib/audio";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ export default function BroadcastListener() {
   const broadcastId = parseInt(id || "0");
   
   const { data: broadcast, isLoading } = useGetBroadcast(broadcastId, {
-    query: { enabled: !!broadcastId, refetchInterval: 10000 }
+    query: { queryKey: getGetBroadcastQueryKey(broadcastId), enabled: !!broadcastId, refetchInterval: 10000 }
   });
 
   const [isPlaying, setIsPlaying] = useState(false);

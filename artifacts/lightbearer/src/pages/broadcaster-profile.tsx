@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { User, Radio, Edit, Clock, Play, Pause, Download, ImageIcon, Camera } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { getGetBroadcasterQueryKey } from "@workspace/api-client-react";
+import { getGetBroadcasterQueryKey, getGetBroadcasterRecordingsQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
 async function uploadImageToServer(file: File): Promise<string> {
@@ -166,11 +166,11 @@ export default function BroadcasterProfile() {
   const targetId = isOwnProfile && me ? me.id : parseInt(id || "0");
 
   const { data: profile, isLoading: isProfileLoading } = useGetBroadcaster(targetId, {
-    query: { enabled: !!targetId },
+    query: { queryKey: getGetBroadcasterQueryKey(targetId), enabled: !!targetId },
   });
 
   const { data: recordings, isLoading: isRecordingsLoading } = useGetBroadcasterRecordings(targetId, {
-    query: { enabled: !!targetId },
+    query: { queryKey: getGetBroadcasterRecordingsQueryKey(targetId), enabled: !!targetId },
   });
 
   const { data: activeBroadcasts } = useListBroadcasts({
