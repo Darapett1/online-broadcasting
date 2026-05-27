@@ -21,8 +21,56 @@ tags:
     description: Platform statistics
   - name: Storage
     description: Object storage upload and serving endpoints.
+  - name: comments
+    description: Broadcast comments and prayer requests
+  - name: transcription
+    description: AI audio transcription
 
 paths:
+  /broadcasts/{id}/comments:
+    get:
+      operationId: listBroadcastComments
+      tags: [comments]
+      summary: List comments and prayer requests for a broadcast
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Comments list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastCommentList"
+    post:
+      operationId: createBroadcastComment
+      tags: [comments]
+      summary: Submit a comment or prayer request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentBody"
+      responses:
+        "201":
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastComment"
+        "400":
+          description: Validation error
+
   /healthz:
     get:
       operationId: healthCheck
@@ -722,6 +770,57 @@ components:
           type: string
         metadata:
           $ref: '#/components/schemas/UploadUrlRequest'
+    BroadcastComment:
+      type: object
+      required: [id, broadcastId, authorName, message, isPrayerRequest, createdAt]
+      properties:
+        id:
+          type: integer
+        broadcastId:
+          type: integer
+        authorName:
+          type: string
+        message:
+          type: string
+        isPrayerRequest:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    BroadcastCommentList:
+      type: object
+      required: [comments]
+      properties:
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/BroadcastComment"
+
+    CreateCommentBody:
+      type: object
+      required: [authorName, message]
+      properties:
+        authorName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        message:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        isPrayerRequest:
+          type: boolean
+
+    TranscriptionResponse:
+      type: object
+      required: [text, language]
+      properties:
+        text:
+          type: string
+        language:
+          type: string
+
     ErrorEnvelope:
       type: object
       required: [error]

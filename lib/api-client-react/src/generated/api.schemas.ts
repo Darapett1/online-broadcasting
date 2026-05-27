@@ -147,6 +147,38 @@ export interface UploadUrlResponse {
   metadata?: UploadUrlRequest;
 }
 
+export interface BroadcastComment {
+  id: number;
+  broadcastId: number;
+  authorName: string;
+  message: string;
+  isPrayerRequest: boolean;
+  createdAt: string;
+}
+
+export interface BroadcastCommentList {
+  comments: BroadcastComment[];
+}
+
+export interface CreateCommentBody {
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  authorName: string;
+  /**
+   * @minLength 1
+   * @maxLength 1000
+   */
+  message: string;
+  isPrayerRequest?: boolean;
+}
+
+export interface TranscriptionResponse {
+  text: string;
+  language: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

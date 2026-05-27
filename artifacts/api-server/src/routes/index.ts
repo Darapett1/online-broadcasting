@@ -6,6 +6,8 @@ import broadcastsRouter from "./broadcasts";
 import recordingsRouter from "./recordings";
 import statsRouter from "./stats";
 import storageRouter from "./storage";
+import commentsRouter from "./comments";
+import transcriptionRouter from "./transcription";
 
 const router: IRouter = Router();
 
@@ -16,5 +18,7 @@ router.use(broadcastsRouter);
 router.use(recordingsRouter);
 router.use(statsRouter);
 router.use(storageRouter);
+router.use(commentsRouter);
+router.use(transcriptionRouter);
 
 export default router;

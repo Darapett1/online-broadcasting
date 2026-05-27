@@ -8,6 +8,43 @@
 import * as zod from "zod";
 
 /**
+ * @summary List comments and prayer requests for a broadcast
+ */
+export const ListBroadcastCommentsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListBroadcastCommentsResponse = zod.object({
+  comments: zod.array(
+    zod.object({
+      id: zod.number(),
+      broadcastId: zod.number(),
+      authorName: zod.string(),
+      message: zod.string(),
+      isPrayerRequest: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+});
+
+/**
+ * @summary Submit a comment or prayer request
+ */
+export const CreateBroadcastCommentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const createBroadcastCommentBodyAuthorNameMax = 80;
+
+export const createBroadcastCommentBodyMessageMax = 1000;
+
+export const CreateBroadcastCommentBody = zod.object({
+  authorName: zod.string().min(1).max(createBroadcastCommentBodyAuthorNameMax),
+  message: zod.string().min(1).max(createBroadcastCommentBodyMessageMax),
+  isPrayerRequest: zod.boolean().optional(),
+});
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({

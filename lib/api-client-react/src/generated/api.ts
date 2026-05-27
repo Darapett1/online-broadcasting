@@ -19,8 +19,11 @@ import type {
 import type {
   AuthResponse,
   Broadcast,
+  BroadcastComment,
+  BroadcastCommentList,
   BroadcasterProfile,
   CreateBroadcastBody,
+  CreateCommentBody,
   CreateRecordingBody,
   ErrorEnvelope,
   ErrorResponse,
@@ -46,6 +49,181 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+/**
+ * @summary List comments and prayer requests for a broadcast
+ */
+export const getListBroadcastCommentsUrl = (id: number) => {
+  return `/api/broadcasts/${id}/comments`;
+};
+
+export const listBroadcastComments = async (
+  id: number,
+  options?: RequestInit,
+): Promise<BroadcastCommentList> => {
+  return customFetch<BroadcastCommentList>(getListBroadcastCommentsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListBroadcastCommentsQueryKey = (id: number) => {
+  return [`/api/broadcasts/${id}/comments`] as const;
+};
+
+export const getListBroadcastCommentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listBroadcastComments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBroadcastComments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListBroadcastCommentsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listBroadcastComments>>
+  > = ({ signal }) => listBroadcastComments(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listBroadcastComments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListBroadcastCommentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listBroadcastComments>>
+>;
+export type ListBroadcastCommentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List comments and prayer requests for a broadcast
+ */
+
+export function useListBroadcastComments<
+  TData = Awaited<ReturnType<typeof listBroadcastComments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBroadcastComments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListBroadcastCommentsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Submit a comment or prayer request
+ */
+export const getCreateBroadcastCommentUrl = (id: number) => {
+  return `/api/broadcasts/${id}/comments`;
+};
+
+export const createBroadcastComment = async (
+  id: number,
+  createCommentBody: CreateCommentBody,
+  options?: RequestInit,
+): Promise<BroadcastComment> => {
+  return customFetch<BroadcastComment>(getCreateBroadcastCommentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createCommentBody),
+  });
+};
+
+export const getCreateBroadcastCommentMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBroadcastComment>>,
+    TError,
+    { id: number; data: BodyType<CreateCommentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createBroadcastComment>>,
+  TError,
+  { id: number; data: BodyType<CreateCommentBody> },
+  TContext
+> => {
+  const mutationKey = ["createBroadcastComment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createBroadcastComment>>,
+    { id: number; data: BodyType<CreateCommentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createBroadcastComment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateBroadcastCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createBroadcastComment>>
+>;
+export type CreateBroadcastCommentMutationBody = BodyType<CreateCommentBody>;
+export type CreateBroadcastCommentMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit a comment or prayer request
+ */
+export const useCreateBroadcastComment = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBroadcastComment>>,
+    TError,
+    { id: number; data: BodyType<CreateCommentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createBroadcastComment>>,
+  TError,
+  { id: number; data: BodyType<CreateCommentBody> },
+  TContext
+> => {
+  return useMutation(getCreateBroadcastCommentMutationOptions(options));
+};
 
 /**
  * @summary Health check

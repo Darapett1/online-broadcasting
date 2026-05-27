@@ -295,7 +295,11 @@ export class ListenerAudio {
   private static readonly TARGET_AHEAD = 0.04;  // 40 ms
   private static readonly MAX_AHEAD    = 0.25;  // 250 ms — beyond this, snap
 
-  start(ws: WebSocket, onWaveformUpdate: (data: Uint8Array) => void) {
+  start(
+    ws: WebSocket,
+    onWaveformUpdate: (data: Uint8Array) => void,
+    onPcmChunk?: (f32: Float32Array) => void,
+  ) {
     this.audioCtx = new AudioContext({ sampleRate: 44100 });
     this.analyser = this.audioCtx.createAnalyser();
     this.gainNode = this.audioCtx.createGain();
@@ -316,7 +320,11 @@ export class ListenerAudio {
 
     ws.binaryType = "arraybuffer";
     ws.onmessage  = (event) => {
-      if (event.data instanceof ArrayBuffer) this._playChunk(event.data);
+      if (event.data instanceof ArrayBuffer) {
+        this._playChunk(event.data);
+        // Forward raw PCM to optional transcription accumulator
+        onPcmChunk?.(new Float32Array(event.data));
+      }
     };
   }
 

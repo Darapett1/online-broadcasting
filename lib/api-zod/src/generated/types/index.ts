@@ -8,8 +8,11 @@
 
 export * from "./authResponse";
 export * from "./broadcast";
+export * from "./broadcastComment";
+export * from "./broadcastCommentList";
 export * from "./broadcasterProfile";
 export * from "./createBroadcastBody";
+export * from "./createCommentBody";
 export * from "./createRecordingBody";
 export * from "./errorEnvelope";
 export * from "./errorResponse";
@@ -21,6 +24,7 @@ export * from "./platformStats";
 export * from "./recording";
 export * from "./registerBody";
 export * from "./searchBroadcastsParams";
+export * from "./transcriptionResponse";
 export * from "./updateBroadcastBody";
 export * from "./updateBroadcasterBody";
 export * from "./uploadUrlRequest";
