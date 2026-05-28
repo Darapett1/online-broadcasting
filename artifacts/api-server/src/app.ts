@@ -31,11 +31,20 @@ app.use(
   }),
 );
 
-app.use(cors({ origin: true, credentials: true }));
+// When the frontend is hosted on GitHub Pages (different domain than Cloud Run),
+// FRONTEND_URL must be set to the exact GitHub Pages origin, e.g.:
+//   https://yourusername.github.io
+// Without it we fall back to same-origin permissive mode (Replit dev).
+const frontendUrl = process.env["FRONTEND_URL"];
+app.use(cors({
+  origin: frontendUrl || true,
+  credentials: true,
+}));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 const sessionSecret = process.env["SESSION_SECRET"] ?? "lightbearer-secret-key-change-in-prod";
+const isProd = process.env["NODE_ENV"] === "production";
 
 app.use(
   session({
@@ -48,9 +57,11 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: process.env["NODE_ENV"] === "production",
+      // cross-origin (GitHub Pages ↔ Cloud Run) requires sameSite:none + secure:true
+      secure: isProd,
       httpOnly: true,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: isProd ? "none" : "lax",
     },
   }),
 );

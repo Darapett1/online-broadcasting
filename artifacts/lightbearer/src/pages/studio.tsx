@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useCreateBroadcast, useUpdateBroadcast, useCreateRecording } from "@workspace/api-client-react";
 import { BroadcasterAudio, MicTester } from "@/lib/audio";
+import { wsUrl } from "@/lib/ws";
+import { apiFetch } from "@/lib/api";
 import {
   Mic, MicOff, Radio, Square, Settings2, Volume2, Upload,
   X, Users, Activity, ImageIcon, Headphones, HeadphoneOff,
@@ -44,11 +46,10 @@ function drawWaveformToCanvas(canvas: HTMLCanvasElement, data: Uint8Array) {
 }
 
 async function uploadFile(file: Blob | File, contentType: string): Promise<string> {
-  const res = await fetch("/api/storage/uploads/blob", {
+  const res = await apiFetch("/api/storage/uploads/blob", {
     method: "POST",
     headers: { "Content-Type": contentType },
     body: file,
-    credentials: "include",
   });
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as any).error || "Upload failed");
   return ((await res.json()) as any).url as string;
@@ -232,8 +233,7 @@ export default function Studio() {
     try {
       const res = await createBcast.mutateAsync({ data: { broadcasterId: broadcaster.id, title, description, thumbnailUrl, venue, minister, tags, isRecorded } });
       setBroadcastId(res.id);
-      const proto  = location.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(`${proto}//${location.host}/ws/broadcast/${res.id}`);
+      const socket = new WebSocket(wsUrl(`/ws/broadcast/${res.id}`));
       socket.onopen = async () => {
         try {
           const audio = new BroadcasterAudio();

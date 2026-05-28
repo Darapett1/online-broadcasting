@@ -1,4 +1,5 @@
-const WORKLET_URL = new URL("/audio-processor.js", window.location.origin).href;
+// Use Vite's BASE_URL so the path is correct on GitHub Pages (/<repo>/) as well as /
+const WORKLET_URL = new URL("audio-processor.js", import.meta.env.BASE_URL).href;
 
 // Compressor settings
 const COMP_ON  = { threshold: -24, knee: 30, ratio: 4,  attack: 0.003, release: 0.25 };

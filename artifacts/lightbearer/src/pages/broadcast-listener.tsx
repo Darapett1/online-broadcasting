@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useGetBroadcast, getGetBroadcastQueryKey } from "@workspace/api-client-react";
 import { useParams, Link } from "wouter";
 import { ListenerAudio } from "@/lib/audio";
+import { apiFetch } from "@/lib/api";
+import { wsUrl } from "@/lib/ws";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -168,7 +170,7 @@ export default function BroadcastListener() {
   useEffect(() => {
     if (!broadcastId) return;
     const fetch_ = async () => {
-      const res = await fetch(`/api/broadcasts/${broadcastId}/comments`);
+      const res = await apiFetch(`/api/broadcasts/${broadcastId}/comments`);
       if (res.ok) { const d = await res.json(); setComments(d.comments ?? []); }
     };
     fetch_();
@@ -199,7 +201,7 @@ export default function BroadcastListener() {
       if (detectedLangRef.current) form.append("language", detectedLangRef.current);
       setIsTranscribing(true);
       try {
-        const res = await fetch("/api/transcription", { method: "POST", body: form });
+        const res = await apiFetch("/api/transcription", { method: "POST", body: form });
         if (res.ok) {
           const data: { text: string; language: string } = await res.json();
           if (data.text.trim()) {
@@ -287,8 +289,7 @@ export default function BroadcastListener() {
       audio.setVolume(volume / 100);
 
       // ── STEP 2: Open WebSocket and attach audio once connected
-      const proto  = location.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(`${proto}//${location.host}/ws/listen/${broadcastId}`);
+      const socket = new WebSocket(wsUrl(`/ws/listen/${broadcastId}`));
       wsRef.current = socket;
       setIsPlaying(true); // show "connecting" state immediately
 
@@ -346,7 +347,7 @@ export default function BroadcastListener() {
     if (!commentName.trim() || !commentMessage.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/broadcasts/${broadcastId}/comments`, {
+      const res = await apiFetch(`/api/broadcasts/${broadcastId}/comments`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ authorName: commentName.trim(), message: commentMessage.trim(), isPrayerRequest: isPrayer }),
       });
