@@ -204,6 +204,31 @@ export default function Studio() {
     if (!broadcaster) return;
     if (tags.length < 5) { toast({ title: "Need at least 5 tags", variant: "destructive" }); return; }
     stopMicTest();
+
+    // ── Acquire mic + unlock AudioContext IMMEDIATELY in the user-gesture
+    //    handler, before any async API calls or WebSocket setup.
+    //    Android Chrome requires this — it enforces a strict user-activation
+    //    window and will block AudioContext / getUserMedia if called too late.
+    let preStream: MediaStream;
+    try {
+      preStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl:  false,
+          channelCount:     { ideal: 1, max: 1 },
+          sampleRate:       { ideal: 44100 },
+        },
+        video: false,
+      });
+    } catch (e: any) {
+      const desc = e.name === "NotAllowedError" ? "Mic permission denied. Please allow microphone access and try again."
+        : e.name === "NotFoundError" ? "No microphone found on this device."
+        : e.message;
+      toast({ title: "Microphone Error", description: desc, variant: "destructive" });
+      return;
+    }
+
     try {
       const res = await createBcast.mutateAsync({ data: { broadcasterId: broadcaster.id, title, description, thumbnailUrl, venue, minister, tags, isRecorded } });
       setBroadcastId(res.id);
@@ -212,21 +237,23 @@ export default function Studio() {
       socket.onopen = async () => {
         try {
           const audio = new BroadcasterAudio();
-          await audio.start(socket, drawLive, isRecorded);
+          // Pass the pre-acquired stream so BroadcasterAudio skips getUserMedia
+          await audio.start(socket, drawLive, isRecorded, preStream);
           audio.updateSettings(bass, mid, treble, compOn, pitch, reverbWet);
           audio.setVolume(volume);
           socket.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.type === "listener_count") setListeners(m.count); } catch {} };
           audioRef.current = audio; setWs(socket); isLiveRef.current = true; setLiveStart(new Date()); setStep(2);
           toast({ title: "You are LIVE!" });
         } catch (e: any) {
+          // Release the pre-acquired stream if we failed
+          preStream.getTracks().forEach(t => t.stop());
           socket.close();
-          const desc = e.name === "NotAllowedError" ? "Mic permission denied." : e.name === "NotFoundError" ? "No microphone found." : e.message;
-          toast({ title: "Microphone Error", description: desc, variant: "destructive" });
+          toast({ title: "Broadcast Error", description: e.message, variant: "destructive" });
         }
       };
       socket.onerror  = () => toast({ title: "Connection Error", variant: "destructive" });
       socket.onclose  = (e) => { if (e.code !== 1000 && isLiveRef.current) toast({ title: "Connection Lost", variant: "destructive" }); isLiveRef.current = false; };
-    } catch (e: any) { toast({ title: "Failed to start", description: e.message, variant: "destructive" }); }
+    } catch (e: any) { toast({ title: "Failed to start broadcast", description: e.message, variant: "destructive" }); }
   };
 
   const endBroadcast = async (opt: "profile" | "draft" | "discard") => {

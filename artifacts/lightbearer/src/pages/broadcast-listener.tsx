@@ -240,6 +240,34 @@ export default function BroadcastListener() {
     if (askTranscript && transcriptRef.current.length > 0) setShowLeaveModal(true);
   };
 
+  // ── Fake waveform animation for recording playback ────────────────────
+  // (No Web Audio API analyser — avoids CORS issues with storage bucket URLs)
+  const fakeWavePhaseRef = useRef(0);
+  const drawFakeWaveform = useCallback(() => {
+    if (!waveCanvasRef.current) return;
+    const canvas = waveCanvasRef.current;
+    const ctx    = canvas.getContext("2d"); if (!ctx) return;
+    const { width: W, height: H } = canvas;
+    ctx.clearRect(0, 0, W, H);
+    const midY = H / 2, bars = 100, barW = W / bars;
+    const t = fakeWavePhaseRef.current;
+    for (let i = 0; i < bars; i++) {
+      const phase = (i / bars) * Math.PI * 8 + t;
+      const v     = (Math.sin(phase) * 0.35 + Math.random() * 0.15 + 0.1) * 0.85;
+      const halfH = Math.max(2, v * midY * 0.9);
+      const alpha = Math.max(0.15, v * 0.8);
+      const grad  = ctx.createLinearGradient(0, midY - halfH, 0, midY + halfH);
+      grad.addColorStop(0,   `rgba(251,191,36,${alpha * 0.5})`);
+      grad.addColorStop(0.5, `rgba(245,158,11,${alpha})`);
+      grad.addColorStop(1,   `rgba(251,191,36,${alpha * 0.5})`);
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.roundRect(i * barW + 1, midY - halfH, barW - 2, halfH * 2, 2); ctx.fill();
+    }
+    ctx.strokeStyle = "rgba(245,158,11,0.12)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke();
+    fakeWavePhaseRef.current += 0.06;
+  }, []);
+
   // ── Play / Stop ────────────────────────────────────────────────────────
   const handlePlay = async () => {
     if (isPlaying) { stopAll(true); return; }
@@ -248,26 +276,39 @@ export default function BroadcastListener() {
     audioRef.current = audio;
 
     if (broadcast?.isLive) {
-      // ── Live WebSocket path ─────────────────────────────────────────
+      // ── STEP 1: Create + resume AudioContext NOW (in user-gesture handler)
+      //    BEFORE creating the WebSocket — Android requires this to be in the
+      //    synchronous / microtask chain of the click event.
+      try {
+        await audio.initContext(handleWaveformUpdate);
+      } catch {
+        audioRef.current = null; return;
+      }
+      audio.setVolume(volume / 100);
+
+      // ── STEP 2: Open WebSocket and attach audio once connected
       const proto  = location.protocol === "https:" ? "wss:" : "ws:";
       const socket = new WebSocket(`${proto}//${location.host}/ws/listen/${broadcastId}`);
+      wsRef.current = socket;
+      setIsPlaying(true); // show "connecting" state immediately
+
       socket.onopen  = () => {
-        audio.start(socket, handleWaveformUpdate, handlePcmChunk);
-        audio.setVolume(volume / 100);
-        wsRef.current = socket;
-        setIsPlaying(true);
+        audio.attach(socket, handlePcmChunk);
         setConnected(true);
       };
       socket.onclose = () => stopAll(false);
-      socket.onerror = () => { setIsPlaying(false); setConnected(false); };
+      socket.onerror = () => { stopAll(false); };
 
     } else if (broadcast?.recordingUrl) {
-      // ── Recorded audio path ─────────────────────────────────────────
+      // ── Recorded audio: plain HTMLAudioElement (no CORS needed)
       try {
-        await audio.startFromUrl(broadcast.recordingUrl, handleWaveformUpdate);
+        await audio.startFromUrl(broadcast.recordingUrl);
         audio.setVolume(volume / 100);
         setIsPlaying(true);
         setConnected(false);
+
+        // Start fake waveform animation
+        const waveIvl = setInterval(drawFakeWaveform, 80);
 
         // Poll for playback progress
         progressIvlRef.current = setInterval(() => {
@@ -276,11 +317,16 @@ export default function BroadcastListener() {
           setRecCurrent(cur);
           setRecDuration(dur);
           setRecProgress(dur > 0 ? cur / dur : 0);
-          // Auto-stop when recording ends
-          if (dur > 0 && cur >= dur - 0.2) stopAll(false);
-        }, 500);
+          if (dur > 0 && cur >= dur - 0.3) {
+            clearInterval(waveIvl);
+            stopAll(false);
+          }
+        }, 300);
+
+        // waveIvl is cleared when the progress interval fires stopAll()
       } catch {
         audioRef.current = null;
+        if (waveCanvasRef.current) drawIdleWaveform(waveCanvasRef.current);
       }
     }
   };

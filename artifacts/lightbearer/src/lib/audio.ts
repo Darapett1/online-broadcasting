@@ -66,10 +66,29 @@ export class BroadcasterAudio {
   async start(
     ws: WebSocket,
     onWaveformUpdate: (data: Uint8Array) => void,
-    record = false
+    record = false,
+    /** Pass a stream already acquired in the user-gesture handler to avoid Android autoplay blocks */
+    preAcquiredStream?: MediaStream,
   ) {
     this.audioCtx = new AudioContext({ sampleRate: 44100 });
-    this.stream   = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    // Must resume() before any async gap — this unlocks audio on Android/iOS
+    await this.audioCtx.resume();
+
+    // Use pre-acquired stream when available (avoids getUserMedia outside user-gesture on Android)
+    if (preAcquiredStream) {
+      this.stream = preAcquiredStream;
+    } else {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation:  true,
+          noiseSuppression:  true,
+          autoGainControl:   false, // handled by our compressor
+          channelCount:      { ideal: 1, max: 1 },
+          sampleRate:        { ideal: 44100 },
+        },
+        video: false,
+      });
+    }
     this.source   = this.audioCtx.createMediaStreamSource(this.stream);
 
     // ── EQ chain ────────────────────────────────────────────────────────
@@ -168,9 +187,13 @@ export class BroadcasterAudio {
     if (record) {
       const dest = this.audioCtx.createMediaStreamDestination();
       this.analyser.connect(dest);
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
+      // Pick the best MIME type supported by this device/browser
+      const mimeType = (
+        MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" :
+        MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")  ? "audio/ogg;codecs=opus"  :
+        MediaRecorder.isTypeSupported("audio/webm")             ? "audio/webm"             :
+        "audio/ogg"
+      );
       this.mediaRecorder = new MediaRecorder(dest.stream, { mimeType });
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) this.recordedChunks.push(e.data);
@@ -256,8 +279,12 @@ export class MicTester {
   private animFrameId = 0;
 
   async start(onWaveformUpdate: (data: Uint8Array) => void) {
-    this.audioCtx = new AudioContext({ sampleRate: 44100 });
-    this.stream   = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    this.audioCtx = new AudioContext();
+    await this.audioCtx.resume();
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: { ideal: 1, max: 1 } },
+      video: false,
+    });
     const source  = this.audioCtx.createMediaStreamSource(this.stream);
     this.analyser = this.audioCtx.createAnalyser();
     this.analyser.fftSize = 512;
@@ -296,16 +323,19 @@ export class ListenerAudio {
   private static readonly TARGET_AHEAD = 0.04;  // 40 ms
   private static readonly MAX_AHEAD    = 0.25;  // 250 ms — beyond this, snap
 
-  start(
-    ws: WebSocket,
-    onWaveformUpdate: (data: Uint8Array) => void,
-    onPcmChunk?: (f32: Float32Array) => void,
-  ) {
-    this.audioCtx = new AudioContext({ sampleRate: 44100 });
+  /**
+   * STEP 1 — Call this synchronously from the user-gesture handler (button click).
+   * Creates + resumes AudioContext so Android/iOS allow audio playback immediately.
+   */
+  async initContext(onWaveformUpdate: (data: Uint8Array) => void) {
+    // Do NOT force sampleRate — device native rate avoids failures on some Android hardware.
+    // PCM chunks are tagged at 44 100 Hz inside each AudioBuffer; the browser resamples as needed.
+    this.audioCtx = new AudioContext();
+    await this.audioCtx.resume(); // unlocks audio on Android / iOS
+
     this.analyser = this.audioCtx.createAnalyser();
     this.gainNode = this.audioCtx.createGain();
     this.analyser.fftSize = 512;
-
     this.gainNode.connect(this.analyser);
     this.analyser.connect(this.audioCtx.destination);
 
@@ -318,15 +348,30 @@ export class ListenerAudio {
       this.animFrameId = requestAnimationFrame(draw);
     };
     draw();
+  }
 
+  /**
+   * STEP 2 — Call once the WebSocket is open.
+   * Wires incoming binary audio into the already-unlocked AudioContext.
+   */
+  attach(ws: WebSocket, onPcmChunk?: (f32: Float32Array) => void) {
     ws.binaryType = "arraybuffer";
     ws.onmessage  = (event) => {
       if (event.data instanceof ArrayBuffer) {
         this._playChunk(event.data);
-        // Forward raw PCM to optional transcription accumulator
         onPcmChunk?.(new Float32Array(event.data));
       }
     };
+  }
+
+  /** Convenience: initContext then attach. Safe for desktop; prefer split on Android. */
+  async start(
+    ws: WebSocket,
+    onWaveformUpdate: (data: Uint8Array) => void,
+    onPcmChunk?: (f32: Float32Array) => void,
+  ) {
+    await this.initContext(onWaveformUpdate);
+    this.attach(ws, onPcmChunk);
   }
 
   private _playChunk(buf: ArrayBuffer) {
@@ -357,37 +402,17 @@ export class ListenerAudio {
   }
 
   /**
-   * Play a saved recording URL through the Web Audio API so the waveform
-   * visualiser works exactly like the live listener view.
+   * Play a saved recording URL.
+   * Uses a plain HTMLAudioElement (no Web Audio API) so CORS headers on the
+   * storage bucket are NOT required — works reliably on Android.
+   * The caller is responsible for the waveform animation (fake tick or idle).
    */
-  startFromUrl(url: string, onWaveformUpdate: (data: Uint8Array) => void) {
-    this.audioCtx = new AudioContext({ sampleRate: 44100 });
-    this.analyser = this.audioCtx.createAnalyser();
-    this.gainNode = this.audioCtx.createGain();
-    this.analyser.fftSize = 512;
-
+  startFromUrl(url: string): Promise<void> {
     const audioEl = new Audio(url);
-    audioEl.crossOrigin = "anonymous";
-    audioEl.preload     = "auto";
-
-    const source = this.audioCtx.createMediaElementSource(audioEl);
-    source.connect(this.analyser);
-    this.analyser.connect(this.gainNode);
-    this.gainNode.connect(this.audioCtx.destination);
-
+    audioEl.preload = "auto";
+    // Do NOT set crossOrigin — it forces a CORS preflight that GCS signed URLs
+    // will fail unless the bucket has explicit CORS rules configured.
     this._audioElement = audioEl;
-
-    const bufLen  = this.analyser.frequencyBinCount;
-    const dataArr = new Uint8Array(bufLen);
-    const draw = () => {
-      if (!this.analyser) return;
-      this.analyser.getByteFrequencyData(dataArr);
-      onWaveformUpdate(new Uint8Array(dataArr));
-      this.animFrameId = requestAnimationFrame(draw);
-    };
-    draw();
-
-    // Returns a promise so callers can catch autoplay blocks
     return audioEl.play();
   }
 
