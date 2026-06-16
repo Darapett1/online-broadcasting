@@ -1,62 +1,61 @@
 name: Deploy Frontend to GitHub Pages
 
-  on:
-    push:
-      branches: [main]
-    workflow_dispatch:
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-  permissions:
-    contents: read
-    pages: write
-    id-token: write
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
-  concurrency:
-    group: pages
-    cancel-in-progress: true
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
-  jobs:
-    build:
-      runs-on: ubuntu-latest
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v4
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        - name: Setup pnpm
-          uses: pnpm/action-setup@v4
-          with:
-            version: latest
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
 
-        - name: Setup Node.js
-          uses: actions/setup-node@v4
-          with:
-            node-version: "24"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
 
-        - name: Install dependencies
-          run: pnpm install --no-frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
-        - name: Build shared libs
-          run: pnpm run typecheck:libs
+      - name: Build shared libs
+        run: pnpm run typecheck:libs
 
-        - name: Build frontend
-          run: pnpm --filter @workspace/lightbearer run build
-          env:
-            PORT: "3000"
-            BASE_PATH: ${{ vars.BASE_PATH || '/' }}
-            VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+      - name: Build frontend
+        run: pnpm --filter @workspace/lightbearer run build
+        env:
+          PORT: "3000"
+          BASE_PATH: ${{ vars.BASE_PATH }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
 
-        - name: Upload Pages artifact
-          uses: actions/upload-pages-artifact@v3
-          with:
-            path: artifacts/lightbearer/dist/public
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/lightbearer/dist/public
 
-    deploy:
-      needs: build
-      runs-on: ubuntu-latest
-      environment:
-        name: github-pages
-        url: ${{ steps.deployment.outputs.page_url }}
-      steps:
-        - name: Deploy to GitHub Pages
-          id: deployment
-          uses: actions/deploy-pages@v4
-  
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
