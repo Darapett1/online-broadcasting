@@ -43,6 +43,7 @@ export interface BroadcasterProfile {
   followerCount: number;
   broadcastCount: number;
   isLive: boolean;
+  isAdmin?: boolean;
   createdAt: string;
 }
 
