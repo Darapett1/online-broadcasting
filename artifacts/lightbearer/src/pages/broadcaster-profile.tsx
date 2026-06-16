@@ -15,13 +15,15 @@ import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetBroadcasterQueryKey, getGetBroadcasterRecordingsQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/lib/api";
 
-async function uploadImageToServer(file: File): Promise<string> {
-  const res = await fetch("/api/storage/uploads/blob", {
+type ImagePurpose = "avatar" | "cover" | "thumbnail";
+
+async function uploadImageToServer(file: File, purpose: ImagePurpose): Promise<string> {
+  const res = await apiFetch(`/api/storage/uploads/blob?purpose=${purpose}`, {
     method: "POST",
     headers: { "Content-Type": file.type || "image/jpeg" },
     body: file,
-    credentials: "include",
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -107,10 +109,12 @@ function ImageUploadField({
   label,
   value,
   onChange,
+  purpose,
 }: {
   label: string;
   value: string;
   onChange: (url: string) => void;
+  purpose: ImagePurpose;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -121,7 +125,7 @@ function ImageUploadField({
     if (!file) return;
     setUploading(true);
     try {
-      const url = await uploadImageToServer(file);
+      const url = await uploadImageToServer(file, purpose);
       onChange(url);
       toast({ title: `${label} uploaded` });
     } catch (err: any) {
@@ -300,11 +304,13 @@ export default function BroadcasterProfile() {
                           label="Profile Photo"
                           value={editForm.avatarUrl}
                           onChange={(url) => setEditForm((p) => ({ ...p, avatarUrl: url }))}
+                          purpose="avatar"
                         />
                         <ImageUploadField
                           label="Cover Photo"
                           value={editForm.coverUrl}
                           onChange={(url) => setEditForm((p) => ({ ...p, coverUrl: url }))}
+                          purpose="cover"
                         />
                         <div className="space-y-2">
                           <Label htmlFor="phone">Phone (optional)</Label>

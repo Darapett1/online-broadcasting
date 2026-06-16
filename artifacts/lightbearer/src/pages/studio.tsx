@@ -45,8 +45,10 @@ function drawWaveformToCanvas(canvas: HTMLCanvasElement, data: Uint8Array) {
   }
 }
 
-async function uploadFile(file: Blob | File, contentType: string): Promise<string> {
-  const res = await apiFetch("/api/storage/uploads/blob", {
+type UploadPurpose = "thumbnail" | "recording" | "general";
+
+async function uploadFile(file: Blob | File, contentType: string, purpose: UploadPurpose = "general"): Promise<string> {
+  const res = await apiFetch(`/api/storage/uploads/blob?purpose=${purpose}`, {
     method: "POST",
     headers: { "Content-Type": contentType },
     body: file,
@@ -189,7 +191,7 @@ export default function Studio() {
   const pickThumb = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
     setThumbUploading(true);
-    try   { setThumbnailUrl(await uploadFile(f, f.type || "image/jpeg")); toast({ title: "Thumbnail uploaded" }); }
+    try   { setThumbnailUrl(await uploadFile(f, f.type || "image/jpeg", "thumbnail")); toast({ title: "Thumbnail uploaded" }); }
     catch (err: any) { toast({ title: "Upload failed", description: err.message, variant: "destructive" }); }
     finally { setThumbUploading(false); if (thumbRef.current) thumbRef.current.value = ""; }
   };
@@ -280,7 +282,7 @@ export default function Studio() {
       let url: string | undefined;
       if (blob && blob.size > 0) {
         toast({ title: "Saving broadcast audio…" });
-        url = await uploadFile(blob, "audio/webm");
+        url = await uploadFile(blob, "audio/webm", "recording");
       }
 
       // Only add to the recordings library if the broadcaster didn't discard

@@ -1,16 +1,24 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import express from "express";
-import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
+import { ObjectStorageService, type UploadPurpose } from "../lib/objectStorage";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
+const VALID_PURPOSES = new Set<UploadPurpose>(["avatar", "cover", "thumbnail", "recording", "general"]);
+
 /**
- * POST /storage/uploads/blob
+ * POST /storage/uploads/blob?purpose=avatar|cover|thumbnail|recording|general
  *
  * Client sends raw binary body → server uploads to Cloudinary → returns
- * the public CDN URL.  Works for images (avatars, thumbnails, cover photos)
- * and audio recordings.
+ * the public CDN URL (already transformed/optimised for the given purpose).
+ *
+ * Purposes:
+ *   avatar    — cropped to 400×400, face-centred
+ *   cover     — cropped to 1200×400 banner
+ *   thumbnail — cropped to 800×450 (16:9)
+ *   recording — audio file, no image transformation
+ *   general   — quality-optimised, no crop (default)
  */
 router.post(
   "/storage/uploads/blob",
@@ -25,8 +33,14 @@ router.post(
       return;
     }
 
+    const rawPurpose = req.query["purpose"] as string | undefined;
+    const purpose: UploadPurpose =
+      rawPurpose && VALID_PURPOSES.has(rawPurpose as UploadPurpose)
+        ? (rawPurpose as UploadPurpose)
+        : "general";
+
     try {
-      const url = await objectStorageService.uploadObject(req.body as Buffer, contentType);
+      const url = await objectStorageService.uploadObject(req.body as Buffer, contentType, { purpose });
       res.json({ url });
     } catch (error) {
       req.log.error({ err: error }, "Cloudinary upload failed");
