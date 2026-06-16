@@ -577,6 +577,8 @@ components:
           type: integer
         isLive:
           type: boolean
+        isAdmin:
+          type: boolean
         createdAt:
           type: string
           format: date-time
