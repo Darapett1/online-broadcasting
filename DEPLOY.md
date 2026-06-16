@@ -1,195 +1,164 @@
 # Deploying The Lightbearer
 
-This guide explains how to host the app outside Replit using:
+Host the full app for **free** using three services:
 
-- **GitHub Pages** — serves the React frontend (free, always up)
-- **Google Cloud Run** — runs the Express API and WebSocket relay (free tier, no "server down" problem)
-- **Supabase** — free PostgreSQL database (replaces Replit's database)
-- **Google Cloud Storage** — stores recordings (already used by the app)
+| Service | Role | Cost |
+|---|---|---|
+| **GitHub Pages** | Your website (frontend) | Free forever |
+| **Koyeb** | Backend server (API + live audio relay) | Free forever (always on) |
+| **Supabase** | Database | Free forever |
+| **Cloudinary** | File storage (avatars, recordings) | Free (25 GB) |
 
 ---
 
 ## What you need before you start
 
-1. A **Google account** (for Google Cloud)
-2. A **GitHub account**
-3. The code pushed to a GitHub repository
+1. A **GitHub account** — https://github.com
+2. The code pushed to a GitHub repository
 
 ---
 
-## Step 1 — Set up a free database (Supabase)
+## Step 1 — Free database (Supabase)
 
-1. Go to **https://supabase.com** and create a free account
-2. Click **New project** — give it any name, pick a region near you, set a password
-3. Wait for it to set up (about 1 minute)
+1. Go to **https://supabase.com** → sign up free
+2. Click **New project**, give it a name, set a password, pick a region
+3. Wait ~1 minute for it to finish setting up
 4. Go to **Project Settings → Database**
-5. Copy the **Connection string (URI)** — it looks like:
+5. Under **Connection string**, copy the **URI** — looks like:
    ```
    postgresql://postgres:YOUR_PASSWORD@db.xxxx.supabase.co:5432/postgres
    ```
-6. Save this — you will need it as `DATABASE_URL` in the next steps
+6. Save it — this is your `DATABASE_URL`
 
-Then push the database schema to Supabase:
-
+**Push the database tables to Supabase** (run this once in your terminal):
 ```bash
-# In your Replit terminal, run:
-DATABASE_URL="your-supabase-connection-string" pnpm --filter @workspace/db run push
+DATABASE_URL="paste-your-supabase-url-here" pnpm --filter @workspace/db run push
 ```
 
 ---
 
-## Step 2 — Deploy the backend to Google Cloud Run
+## Step 2 — Free file storage (Cloudinary)
 
-### 2a — Set up Google Cloud
+1. Go to **https://cloudinary.com** → sign up free
+2. After signing in, go to your **Dashboard**
+3. You will see three values — copy all three:
+   - **Cloud name**
+   - **API key**
+   - **API secret**
 
-1. Go to **https://console.cloud.google.com**
-2. Create a new project (or use an existing one)
-3. Enable the following APIs (search for each in the console):
-   - **Cloud Run API**
-   - **Artifact Registry API**
-   - **Cloud Build API**
-
-### 2b — Install Google Cloud CLI (gcloud)
-
-Download from: **https://cloud.google.com/sdk/docs/install**
-
-Then in your terminal:
-```bash
-gcloud auth login
-gcloud config set project YOUR_PROJECT_ID
-```
-
-### 2c — Build and deploy
-
-From the root of this repo, run:
-
-```bash
-# Replace YOUR_PROJECT_ID with your Google Cloud project ID
-gcloud run deploy lightbearer-api \
-  --source . \
-  --region us-central1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --port 8080 \
-  --set-env-vars NODE_ENV=production \
-  --set-env-vars DATABASE_URL="your-supabase-connection-string" \
-  --set-env-vars SESSION_SECRET="pick-a-long-random-string-here" \
-  --set-env-vars GROQ_API_KEY="your-groq-api-key" \
-  --set-env-vars DEFAULT_OBJECT_STORAGE_BUCKET_ID="your-gcs-bucket-name" \
-  --set-env-vars PRIVATE_OBJECT_DIR="private" \
-  --set-env-vars PUBLIC_OBJECT_SEARCH_PATHS="public" \
-  --set-env-vars FRONTEND_URL="https://YOUR_GITHUB_USERNAME.github.io"
-```
-
-> **FRONTEND_URL** is the base URL of your GitHub Pages site (no trailing slash, no path).
-> If you have a custom domain, use that instead.
-
-After deployment, Cloud Run will give you a URL like:
-```
-https://lightbearer-api-abc123-uc.a.run.app
-```
-
-Save this — you need it for Step 3.
-
-### 2d — Grant Cloud Run access to Google Cloud Storage
-
-In the Google Cloud Console:
-1. Go to **IAM & Admin → Service Accounts**
-2. Find the service account used by Cloud Run (it ends in `@developer.gserviceaccount.com`)
-3. Give it the **Storage Object Admin** role
+Save these — you need them in Step 3.
 
 ---
 
-## Step 3 — Deploy the frontend to GitHub Pages
+## Step 3 — Free backend server (Koyeb)
 
-### 3a — Push the code to GitHub
+Koyeb runs your server 24/7 and **never sleeps**, even on the free plan.
 
-```bash
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-git push -u origin main
-```
-
-### 3b — Add secrets to your GitHub repository
-
-Go to your repo on GitHub → **Settings → Secrets and variables → Actions**
-
-Add these **Secrets** (click "New repository secret"):
-
-| Secret name | Value |
-|---|---|
-| `VITE_API_BASE_URL` | Your Cloud Run URL from Step 2, e.g. `https://lightbearer-api-abc123-uc.a.run.app` |
-
-Add these **Variables** (click the "Variables" tab, then "New repository variable"):
+1. Go to **https://koyeb.com** → sign up free with your GitHub account
+2. Click **Create service**
+3. Choose **GitHub** → select this repository
+4. Koyeb will detect the `Dockerfile` automatically
+5. Under **Environment variables**, add these one by one:
 
 | Variable name | Value |
 |---|---|
-| `BASE_PATH` | `/` if you have a custom domain, or `/YOUR_REPO_NAME/` for a project page |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | Your Supabase connection string from Step 1 |
+| `SESSION_SECRET` | Any long random text (e.g. `my-ministry-secret-abc123xyz`) |
+| `GROQ_API_KEY` | Your Groq API key (get one free at https://console.groq.com) |
+| `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name from Step 2 |
+| `CLOUDINARY_API_KEY` | Your Cloudinary API key from Step 2 |
+| `CLOUDINARY_API_SECRET` | Your Cloudinary API secret from Step 2 |
+| `FRONTEND_URL` | `https://YOUR_GITHUB_USERNAME.github.io` |
 
-Example: if your repo is `github.com/johndoe/lightbearer`, use `BASE_PATH = /lightbearer/`
+6. Under **Ports**, set port to **8080**
+7. Click **Deploy**
 
-### 3c — Enable GitHub Pages
+After a few minutes Koyeb gives you a URL like:
+```
+https://lightbearer-api-yourname.koyeb.app
+```
+Save this — you need it in Step 4.
+
+---
+
+## Step 4 — Frontend on GitHub Pages
+
+### 4a — Add secrets to your GitHub repo
+
+Go to your repo on GitHub → **Settings → Secrets and variables → Actions**
+
+**Secrets** tab → "New repository secret":
+
+| Name | Value |
+|---|---|
+| `VITE_API_BASE_URL` | Your Koyeb URL from Step 3, e.g. `https://lightbearer-api-yourname.koyeb.app` |
+
+**Variables** tab → "New repository variable":
+
+| Name | Value |
+|---|---|
+| `BASE_PATH` | `/` if you have a custom domain, or `/your-repo-name/` for a normal GitHub Pages project |
+
+Example: if your repo is `github.com/johndoe/lightbearer`, use `/lightbearer/`
+
+### 4b — Enable GitHub Pages
 
 Go to your repo → **Settings → Pages**
-
 - Source: **GitHub Actions**
 - Click Save
 
-### 3d — Trigger the first deployment
+### 4c — Run the first deployment
 
-Go to **Actions** tab in your repo → find the **"Deploy Frontend to GitHub Pages"** workflow → click **Run workflow**
+Go to **Actions** tab → find **"Deploy Frontend to GitHub Pages"** → click **Run workflow**
 
 Your site will be live at:
-- Project page: `https://YOUR_USERNAME.github.io/YOUR_REPO_NAME/`
-- Custom domain: `https://your-domain.com/` (configure in Pages settings)
+```
+https://YOUR_USERNAME.github.io/YOUR_REPO_NAME/
+```
 
 ---
 
-## Step 4 — Test everything
+## Step 5 — Test it
 
 1. Open your GitHub Pages URL
-2. Try logging in with one of the test accounts:
-   - **grace@lightbearer.app** / password123
-   - **deborah@lightbearer.app** / password123
-3. Start a broadcast — microphone should work and you should go live
-4. Open the listener URL on another device and confirm you can hear the audio
+2. Log in with a test account:
+   - **grace@lightbearer.app** / `password123`
+3. Start a broadcast — audio should go live instantly
+4. Open the listener page on another phone — you should hear the audio
 
 ---
 
-## Ongoing updates
+## Updating the app later
 
-After making changes, simply push to the `main` branch:
-
+After making changes, just push to GitHub:
 ```bash
 git add .
-git commit -m "your change"
+git commit -m "your update"
 git push
 ```
 
-GitHub Actions will automatically rebuild and redeploy the frontend.
-
-For backend changes, re-run the `gcloud run deploy` command from Step 2c.
+GitHub Actions rebuilds and republishes the frontend automatically.
+For backend changes, Koyeb also auto-deploys when you push to main (enable this in Koyeb settings).
 
 ---
 
-## Environment variable reference
+## All environment variables at a glance
 
-### Cloud Run (backend)
-
-| Variable | Description |
+### Koyeb (backend)
+| Variable | What it is |
 |---|---|
-| `DATABASE_URL` | Supabase/PostgreSQL connection string |
-| `SESSION_SECRET` | Long random string for session signing |
+| `DATABASE_URL` | Supabase PostgreSQL connection string |
+| `SESSION_SECRET` | Any random string — keeps logins secure |
 | `GROQ_API_KEY` | Groq API key for AI transcription |
-| `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | GCS bucket name for recordings |
-| `PRIVATE_OBJECT_DIR` | Folder inside bucket for private files |
-| `PUBLIC_OBJECT_SEARCH_PATHS` | Folder inside bucket for public files |
+| `CLOUDINARY_CLOUD_NAME` | From your Cloudinary dashboard |
+| `CLOUDINARY_API_KEY` | From your Cloudinary dashboard |
+| `CLOUDINARY_API_SECRET` | From your Cloudinary dashboard |
 | `FRONTEND_URL` | Your GitHub Pages origin (for CORS) |
-| `PORT` | Set automatically by Cloud Run (8080) |
-| `NODE_ENV` | Set to `production` |
+| `NODE_ENV` | `production` |
 
 ### GitHub Actions (frontend build)
-
-| Secret/Variable | Description |
+| Variable | What it is |
 |---|---|
-| `VITE_API_BASE_URL` | Full Cloud Run URL — API calls go here |
-| `BASE_PATH` | Vite base path — `/` or `/repo-name/` |
+| `VITE_API_BASE_URL` | Your Koyeb backend URL |
+| `BASE_PATH` | `/` or `/repo-name/` |
