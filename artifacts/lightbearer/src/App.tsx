@@ -13,8 +13,7 @@ import Register from "@/pages/register";
 import Studio from "@/pages/studio";
 import BroadcasterProfile from "@/pages/broadcaster-profile";
 import BroadcastListener from "@/pages/broadcast-listener";
-// Editable profile can reuse BroadcasterProfile or be a separate page.
-// We'll point /profile to BroadcasterProfile for now, relying on isOwnProfile logic there.
+import Admin from "@/pages/admin";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +29,7 @@ function Router() {
         <Route path="/profile" component={BroadcasterProfile} />
         <Route path="/broadcaster/:id" component={BroadcasterProfile} />
         <Route path="/broadcast/:id" component={BroadcastListener} />
+        <Route path="/admin" component={Admin} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
