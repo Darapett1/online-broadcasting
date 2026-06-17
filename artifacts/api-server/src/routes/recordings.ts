@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, recordingsTable } from "@workspace/db";
 import { CreateRecordingBody, GetRecordingParams } from "@workspace/api-zod";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
 
@@ -20,7 +21,7 @@ function toRecordingJson(r: typeof recordingsTable.$inferSelect) {
   };
 }
 
-router.post("/recordings", async (req, res): Promise<void> => {
+router.post("/recordings", requireAuth, async (req, res): Promise<void> => {
   const parsed = CreateRecordingBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
