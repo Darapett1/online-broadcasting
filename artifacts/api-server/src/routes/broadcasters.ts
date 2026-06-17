@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, count } from "drizzle-orm";
+import { eq, count, sql } from "drizzle-orm";
 import { db, broadcastersTable, broadcastsTable, recordingsTable } from "@workspace/db";
 import { GetBroadcasterParams, UpdateBroadcasterBody, UpdateBroadcasterParams } from "@workspace/api-zod";
 import { toBroadcasterProfile } from "./auth";
@@ -93,6 +93,30 @@ router.patch("/broadcasters/:id", async (req, res): Promise<void> => {
   }
 
   res.json(toBroadcasterProfile(broadcaster));
+});
+
+router.post("/broadcasters/:id/follow", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const [broadcaster] = await db
+    .update(broadcastersTable)
+    .set({ followerCount: sql`${broadcastersTable.followerCount} + 1` })
+    .where(eq(broadcastersTable.id, id))
+    .returning();
+  if (!broadcaster) { res.status(404).json({ error: "Not found" }); return; }
+  res.json({ followerCount: broadcaster.followerCount });
+});
+
+router.delete("/broadcasters/:id/follow", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const [broadcaster] = await db
+    .update(broadcastersTable)
+    .set({ followerCount: sql`GREATEST(0, ${broadcastersTable.followerCount} - 1)` })
+    .where(eq(broadcastersTable.id, id))
+    .returning();
+  if (!broadcaster) { res.status(404).json({ error: "Not found" }); return; }
+  res.json({ followerCount: broadcaster.followerCount });
 });
 
 router.get("/broadcasters/:id/recordings", async (req, res): Promise<void> => {
