@@ -10,6 +10,7 @@ import {
   SearchBroadcastsQueryParams,
 } from "@workspace/api-zod";
 import { toBroadcasterProfile } from "./auth";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
 
@@ -91,7 +92,7 @@ router.get("/broadcasts", async (req, res): Promise<void> => {
   res.json(enriched);
 });
 
-router.post("/broadcasts", async (req, res): Promise<void> => {
+router.post("/broadcasts", requireAuth, async (req, res): Promise<void> => {
   const parsed = CreateBroadcastBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -136,7 +137,7 @@ router.get("/broadcasts/:id", async (req, res): Promise<void> => {
   res.json(await enrichBroadcast(broadcast));
 });
 
-router.patch("/broadcasts/:id", async (req, res): Promise<void> => {
+router.patch("/broadcasts/:id", requireAuth, async (req, res): Promise<void> => {
   const params = UpdateBroadcastParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
