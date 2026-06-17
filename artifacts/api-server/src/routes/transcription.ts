@@ -2,35 +2,33 @@ import { Router } from "express";
 import multer from "multer";
 import Groq from "groq-sdk";
 import { toFile } from "groq-sdk";
+import { db, groqApiKeysTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-// Lazy-init Groq client so missing key only fails at request time, not startup
-let _groq: Groq | null = null;
-function getGroq(): Groq {
-  if (!_groq) {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) throw new Error("GROQ_API_KEY is not set");
-    _groq = new Groq({ apiKey });
+async function getGroqClient(): Promise<Groq> {
+  const dbKeys = await db
+    .select({ keyValue: groqApiKeysTable.keyValue, id: groqApiKeysTable.id })
+    .from(groqApiKeysTable)
+    .where(and(eq(groqApiKeysTable.isActive, true)));
+
+  if (dbKeys.length > 0) {
+    const pick = dbKeys[Math.floor(Math.random() * dbKeys.length)];
+    return new Groq({ apiKey: pick.keyValue });
   }
-  return _groq;
+
+  const envKey = process.env.GROQ_API_KEY;
+  if (envKey) return new Groq({ apiKey: envKey });
+
+  throw new Error("No GROQ API key configured. Add one in the Admin panel.");
 }
 
-// Supported languages — Whisper large-v3 can auto-detect, but we lock to one
-// of these 10 after detecting the first speaker's language.
 const SUPPORTED_LANGS = new Set([
   "en", "es", "fr", "pt", "de", "yo", "ig", "ha", "sw", "ar"
 ]);
 
-/**
- * POST /api/transcription
- * Multipart form-data:
- *   audio    — WAV binary (required)
- *   language — ISO-639-1 code to force (optional; omit for auto-detect on first chunk)
- *
- * Response: { text, language }
- */
 router.post(
   "/transcription",
   upload.single("audio"),
@@ -49,8 +47,7 @@ router.post(
       : undefined;
 
     try {
-      const groq = getGroq();
-
+      const groq = await getGroqClient();
       const audioFile = await toFile(buf, "audio.wav", { type: "audio/wav" });
 
       const result = await groq.audio.transcriptions.create({
