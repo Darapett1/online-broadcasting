@@ -25,6 +25,7 @@ function toBroadcasterProfile(b: typeof broadcastersTable.$inferSelect, broadcas
     followerCount: b.followerCount,
     broadcastCount,
     isLive,
+    isAdmin: b.isAdmin,
     createdAt: b.createdAt.toISOString(),
   };
 }
