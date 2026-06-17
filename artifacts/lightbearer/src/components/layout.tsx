@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { Mic, Radio, User, LogOut, Home, Search } from "lucide-react";
+import { Mic, Radio, User, LogOut, Home, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -31,6 +31,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Link href="/studio" className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors font-medium ${isActive("/studio") ? "bg-sidebar-accent text-primary" : "text-sidebar-foreground hover:text-primary"}`}>
               <Mic className="h-5 w-5" />
               <span>Studio</span>
+            </Link>
+          )}
+          {broadcaster?.isAdmin && (
+            <Link href="/admin" className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors font-medium ${isActive("/admin") ? "bg-sidebar-accent text-amber-500" : "text-amber-500/70 hover:text-amber-500"}`}>
+              <ShieldCheck className="h-5 w-5" />
+              <span>Admin</span>
             </Link>
           )}
         </nav>
