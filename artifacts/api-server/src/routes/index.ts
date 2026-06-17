@@ -8,6 +8,7 @@ import statsRouter from "./stats";
 import storageRouter from "./storage";
 import commentsRouter from "./comments";
 import transcriptionRouter from "./transcription";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(statsRouter);
 router.use(storageRouter);
 router.use(commentsRouter);
 router.use(transcriptionRouter);
+router.use(adminRouter);
 
 export default router;
