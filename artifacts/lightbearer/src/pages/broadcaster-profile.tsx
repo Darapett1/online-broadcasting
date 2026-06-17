@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useGetBroadcaster, useGetBroadcasterRecordings, useListBroadcasts, useUpdateBroadcaster } from "@workspace/api-client-react";
 import { Link, useParams } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Radio, Edit, Clock, Play, Pause, Download, ImageIcon, Camera } from "lucide-react";
+import { User, Radio, Edit, Clock, Play, Pause, Download, Camera, UserPlus, UserCheck } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetBroadcasterQueryKey, getGetBroadcasterRecordingsQueryKey } from "@workspace/api-client-react";
@@ -183,6 +183,26 @@ export default function BroadcasterProfile() {
   } as any);
   const liveBroadcast = activeBroadcasts?.find((b) => b.broadcasterId === targetId && b.isLive);
 
+  const FOLLOW_KEY = `followed_${targetId}`;
+  const [isFollowing, setIsFollowing] = useState(() => localStorage.getItem(FOLLOW_KEY) === "1");
+  const [followerCount, setFollowerCount] = useState<number | null>(null);
+  useEffect(() => { if (profile) setFollowerCount(profile.followerCount); }, [profile]);
+
+  const handleFollow = async () => {
+    const method = isFollowing ? "DELETE" : "POST";
+    try {
+      const res = await apiFetch(`/api/broadcasters/${targetId}/follow`, { method });
+      if (res.ok) {
+        const data = await res.json();
+        setFollowerCount(data.followerCount);
+        const next = !isFollowing;
+        setIsFollowing(next);
+        if (next) localStorage.setItem(FOLLOW_KEY, "1");
+        else localStorage.removeItem(FOLLOW_KEY);
+      }
+    } catch { /* ignore */ }
+  };
+
   const updateProfileMutation = useUpdateBroadcaster();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -333,7 +353,13 @@ export default function BroadcasterProfile() {
                     </DialogContent>
                   </Dialog>
                 ) : (
-                  <Button className="bg-primary text-primary-foreground hover:bg-primary/90">Follow</Button>
+                  <Button
+                    onClick={handleFollow}
+                    variant={isFollowing ? "outline" : "default"}
+                    className={isFollowing ? "border-primary text-primary" : "bg-primary text-primary-foreground hover:bg-primary/90"}
+                  >
+                    {isFollowing ? <><UserCheck className="w-4 h-4 mr-2" />Following</> : <><UserPlus className="w-4 h-4 mr-2" />Follow</>}
+                  </Button>
                 )}
                 {liveBroadcast && !isOwnProfile && (
                   <Link href={`/broadcast/${liveBroadcast.id}`}>
@@ -347,7 +373,7 @@ export default function BroadcasterProfile() {
 
             <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm text-muted-foreground">
               <span>
-                <strong className="text-foreground">{profile.followerCount}</strong> Followers
+                <strong className="text-foreground">{followerCount ?? profile.followerCount}</strong> Followers
               </span>
               <span>
                 <strong className="text-foreground">{profile.broadcastCount}</strong> Broadcasts
