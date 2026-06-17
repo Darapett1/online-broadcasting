@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import express from "express";
 import { ObjectStorageService, type UploadPurpose } from "../lib/objectStorage";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -22,6 +23,7 @@ const VALID_PURPOSES = new Set<UploadPurpose>(["avatar", "cover", "thumbnail", "
  */
 router.post(
   "/storage/uploads/blob",
+  requireAuth,
   express.raw({ type: "*/*", limit: "250mb" }),
   async (req: Request, res: Response) => {
     const contentType = (req.headers["content-type"] || "application/octet-stream")
