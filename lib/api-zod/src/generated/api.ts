@@ -85,6 +85,7 @@ export const LoginResponse = zod.object({
     followerCount: zod.number(),
     broadcastCount: zod.number(),
     isLive: zod.boolean(),
+    isAdmin: zod.boolean().optional(),
     createdAt: zod.coerce.date(),
   }),
   token: zod.string().optional(),
@@ -112,6 +113,7 @@ export const GetMeResponse = zod.object({
   followerCount: zod.number(),
   broadcastCount: zod.number(),
   isLive: zod.boolean(),
+  isAdmin: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
 });
 
@@ -130,6 +132,7 @@ export const ListBroadcastersResponseItem = zod.object({
   followerCount: zod.number(),
   broadcastCount: zod.number(),
   isLive: zod.boolean(),
+  isAdmin: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
 });
 export const ListBroadcastersResponse = zod.array(ListBroadcastersResponseItem);
@@ -153,6 +156,7 @@ export const GetBroadcasterResponse = zod.object({
   followerCount: zod.number(),
   broadcastCount: zod.number(),
   isLive: zod.boolean(),
+  isAdmin: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
 });
 
@@ -183,6 +187,7 @@ export const UpdateBroadcasterResponse = zod.object({
   followerCount: zod.number(),
   broadcastCount: zod.number(),
   isLive: zod.boolean(),
+  isAdmin: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
 });
 
@@ -232,6 +237,7 @@ export const ListBroadcastsResponseItem = zod.object({
       followerCount: zod.number(),
       broadcastCount: zod.number(),
       isLive: zod.boolean(),
+      isAdmin: zod.boolean().optional(),
       createdAt: zod.coerce.date(),
     })
     .optional(),
@@ -294,6 +300,7 @@ export const GetBroadcastResponse = zod.object({
       followerCount: zod.number(),
       broadcastCount: zod.number(),
       isLive: zod.boolean(),
+      isAdmin: zod.boolean().optional(),
       createdAt: zod.coerce.date(),
     })
     .optional(),
@@ -343,6 +350,7 @@ export const UpdateBroadcastResponse = zod.object({
       followerCount: zod.number(),
       broadcastCount: zod.number(),
       isLive: zod.boolean(),
+      isAdmin: zod.boolean().optional(),
       createdAt: zod.coerce.date(),
     })
     .optional(),
@@ -384,6 +392,7 @@ export const SearchBroadcastsResponseItem = zod.object({
       followerCount: zod.number(),
       broadcastCount: zod.number(),
       isLive: zod.boolean(),
+      isAdmin: zod.boolean().optional(),
       createdAt: zod.coerce.date(),
     })
     .optional(),
