@@ -15,5 +15,4 @@ FROM node:24-alpine
 WORKDIR /app
 COPY --from=builder /app/artifacts/api-server/dist ./dist
 ENV NODE_ENV=production
-EXPOSE 8080
 CMD ["node", "--enable-source-maps", "./dist/index.mjs"]
